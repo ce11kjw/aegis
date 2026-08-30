@@ -28,7 +28,7 @@ public class MainActivity extends Activity {
 
         // 标题
         TextView title = new TextView(this);
-        title.setText("Aegis 安全检测引擎 v1.0");
+        title.setText("Aegis 安全检测引擎 v1.0.1");
         title.setTextColor(Color.parseColor("#58A6FF"));
         title.setTextSize(20);
         title.setTypeface(null, Typeface.BOLD);
