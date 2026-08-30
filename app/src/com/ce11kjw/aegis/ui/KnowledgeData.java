@@ -8,7 +8,7 @@ package com.ce11kjw.aegis.ui;
 public class KnowledgeData {
 
     public static final String[] MODULE_NAMES = {
-        "反调试", "Frida注入", "Xposed/Zygisk", "完整性", "模拟器", "Root", "系统环境"
+        "反调试", "Frida注入", "Xposed/Zygisk", "完整性", "模拟器", "Root", "系统环境", "网络环境"
     };
 
     /** 返回某检测项的知识卡: [原理, 攻击场景, 证据解读, 防御建议] */

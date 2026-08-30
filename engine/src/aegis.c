@@ -83,6 +83,7 @@ aegis_config_t aegis_default_config(void) {
     c.enable_emulator = 1;
     c.enable_root = 1;
     c.enable_system = 1;
+    c.enable_network = 1;
     c.verbose = 1;
     return c;
 }
@@ -96,6 +97,7 @@ const char *aegis_module_name(aegis_module_t mod) {
         case AEGIS_MOD_EMULATOR:  return "模拟器";
         case AEGIS_MOD_ROOT:      return "Root";
         case AEGIS_MOD_SYSTEM:    return "系统环境";
+        case AEGIS_MOD_NETWORK:   return "网络环境";
         default:                  return "未知";
     }
 }
@@ -128,6 +130,7 @@ int aegis_integrity_detect(const aegis_config_t *cfg, aegis_result_t *r, int max
 int aegis_emulator_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
 int aegis_root_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
 int aegis_system_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
+int aegis_network_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
 
 int aegis_run_module(const aegis_config_t *cfg, aegis_module_t mod,
                      aegis_result_t *results, int max_results) {
@@ -140,6 +143,7 @@ int aegis_run_module(const aegis_config_t *cfg, aegis_module_t mod,
         case AEGIS_MOD_EMULATOR:  return aegis_emulator_detect(cfg, results, max_results);
         case AEGIS_MOD_ROOT:      return aegis_root_detect(cfg, results, max_results);
         case AEGIS_MOD_SYSTEM:    return aegis_system_detect(cfg, results, max_results);
+        case AEGIS_MOD_NETWORK:   return aegis_network_detect(cfg, results, max_results);
         default: return 0;
     }
 }

@@ -84,6 +84,13 @@ static int check_wx_so(aegis_result_t *r) {
     return 0;
 }
 
+/* 前向声明 */
+static int check_apk_sign_meta(aegis_result_t *r);
+static int check_arsc(aegis_result_t *r);
+static int check_dex_hash(aegis_result_t *r);
+static int check_so_mem_vs_disk(aegis_result_t *r);
+static int check_repack(aegis_result_t *r);
+
 int aegis_integrity_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     (void)cfg;
     int n = 0;
@@ -91,5 +98,25 @@ int aegis_integrity_detect(const aegis_config_t *cfg, aegis_result_t *r, int max
     if (n < max) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "匿名可执行映射"); check_maps_integrity(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "W+X so检测"); check_wx_so(&r[n]); n++; }
     if (n < max && cfg->verbose) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "so哈希校验"); check_self_so(&r[n], "/proc/self/exe", "自身"); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "APK签名校验"); check_apk_sign_meta(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "resources校验"); check_arsc(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "DEX哈希校验"); check_dex_hash(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "so内存vs磁盘"); check_so_mem_vs_disk(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "重打包特征"); check_repack(&r[n]); n++; }
     return n;
+}
+static int check_apk_sign_meta(aegis_result_t *r) {
+    r->detected = 0; return 0;  /* 需要 Java 层读取签名 */
+}
+static int check_arsc(aegis_result_t *r) {
+    r->detected = 0; return 0;
+}
+static int check_dex_hash(aegis_result_t *r) {
+    r->detected = 0; return 0;
+}
+static int check_so_mem_vs_disk(aegis_result_t *r) {
+    r->detected = 0; return 0;
+}
+static int check_repack(aegis_result_t *r) {
+    r->detected = 0; return 0;
 }

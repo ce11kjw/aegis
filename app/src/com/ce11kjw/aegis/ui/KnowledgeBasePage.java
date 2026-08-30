@@ -55,7 +55,7 @@ public class KnowledgeBasePage extends LinearLayout {
         content.addView(sub, subLp);
 
         // ===== 模块浏览卡片 =====
-        int[] counts = {6, 6, 4, 4, 6, 5, 6};
+        int[] counts = {12, 12, 10, 9, 14, 13, 11, 6};
         for (int m = 0; m < 7; m++) {
             final int modIdx = m;
             final String modName = KnowledgeData.MODULE_NAMES[m];
@@ -222,6 +222,7 @@ public class KnowledgeBasePage extends LinearLayout {
             case 3: return "🔐";
             case 4: return "📱";
             case 5: return "👑";
+            case 7: return "🌐";
             default: return "🖥️";
         }
     }
@@ -234,6 +235,7 @@ public class KnowledgeBasePage extends LinearLayout {
             case 3: return new String[]{"自身路径校验","匿名可执行映射","W+X so检测","so哈希校验"};
             case 4: return new String[]{"Build字段检测","硬件平台检测","属性联动检测","CPU核心数检测","传感器数量检测","运营商检测"};
             case 5: return new String[]{"su二进制检测","Root管理器特征","test-keys签名","系统分区rw挂载","su执行测试"};
+            case 7: return new String[]{"全局代理检测","VPN接口检测","用户CA证书检测","USB调试检测","ADB连接检测","可疑端口监听"};
             default: return new String[]{"系统调试状态","SELinux状态","编译类型","CapEff权限","LD_PRELOAD检测","属性联动检测"};
         }
     }

@@ -36,7 +36,8 @@ typedef enum {
     AEGIS_MOD_EMULATOR = 4, /* 模拟器检测 */
     AEGIS_MOD_ROOT = 5,     /* Root / KernelSU / Magisk */
     AEGIS_MOD_SYSTEM = 6,   /* 系统环境 */
-    AEGIS_MOD_COUNT = 7
+    AEGIS_MOD_NETWORK = 7,  /* 网络环境 */
+    AEGIS_MOD_COUNT = 8
 } aegis_module_t;
 
 /* 单项检测结果 */
@@ -57,6 +58,7 @@ typedef struct {
     int enable_emulator;
     int enable_root;
     int enable_system;
+    int enable_network;
     int verbose;            /* 详细模式: 返回更多证据 */
 } aegis_config_t;
 

@@ -129,6 +129,16 @@ static int check_operator(aegis_result_t *r) {
     return 0;
 }
 
+/* 前向声明 */
+static int check_cpu_isa(aegis_result_t *r);
+static int check_baseband(aegis_result_t *r);
+static int check_gpu(aegis_result_t *r);
+static int check_battery(aegis_result_t *r);
+static int check_mem_size(aegis_result_t *r);
+static int check_dev_nodes(aegis_result_t *r);
+static int check_qemu_prop(aegis_result_t *r);
+static int check_fingerprint(aegis_result_t *r);
+
 int aegis_emulator_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     (void)cfg;
     int n = 0;
@@ -138,5 +148,106 @@ int aegis_emulator_detect(const aegis_config_t *cfg, aegis_result_t *r, int max)
     if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "CPU核心数检测"); check_cpu_count(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "传感器数量检测"); check_sensors(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "运营商检测"); check_operator(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "CPU指令集检测"); check_cpu_isa(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "基带版本检测"); check_baseband(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "GPU渲染器检测"); check_gpu(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "电池属性检测"); check_battery(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "内存大小检测"); check_mem_size(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "设备节点检测"); check_dev_nodes(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "qemu内核标志"); check_qemu_prop(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "Fingerprint指纹"); check_fingerprint(&r[n]); n++; }
     return n;
+}
+
+static int check_cpu_isa(aegis_result_t *r) {
+    r->detected = 0; return 0;
+}
+static int check_baseband(aegis_result_t *r) {
+    char buf[128];
+    #ifdef __ANDROID__
+    __system_property_get("gsm.version.baseband", buf);
+    if (buf[0] == '\0' || strstr(buf, "unknown")) {
+        snprintf(r->evidence, sizeof(r->evidence), "基带版本为空 (真实手机必有基带)");
+        r->detected = 1; r->level = AEGIS_LEVEL_MED; return 1;
+    }
+    #else
+    (void)buf;
+    #endif
+    r->detected = 0; return 0;
+}
+static int check_gpu(aegis_result_t *r) {
+    char buf[128];
+    #ifdef __ANDROID__
+    __system_property_get("ro.hardware.egl", buf);
+    if (strstr(buf, "swiftshader") || strstr(buf, "llvmpipe")) {
+        snprintf(r->evidence, sizeof(r->evidence), "GPU 渲染器为软件模拟: %s", buf);
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH; return 1;
+    }
+    #else
+    (void)buf;
+    #endif
+    r->detected = 0; return 0;
+}
+static int check_battery(aegis_result_t *r) {
+    char buf[64];
+    long n = aegis_read_file("/sys/class/power_supply/battery/temp", buf, sizeof(buf));
+    if (n > 0) {
+        int t = atoi(buf);
+        if (t < 100 || t > 600) {
+            snprintf(r->evidence, sizeof(r->evidence), "电池温度异常: %d (正常 100-600)", t);
+            r->detected = 1; r->level = AEGIS_LEVEL_MED; return 1;
+        }
+    }
+    r->detected = 0; return 0;
+}
+static int check_mem_size(aegis_result_t *r) {
+    char buf[1024];
+    long n = aegis_read_file("/proc/meminfo", buf, sizeof(buf));
+    if (n > 0) {
+        const char *p = aegis_strcasestr(buf, "MemTotal:");
+        if (p) {
+            long kb = atol(p + 9);
+            if (kb > 0 && kb < 512 * 1024) {
+                snprintf(r->evidence, sizeof(r->evidence), "内存异常小: %ldMB (真实手机 >=512MB)", kb/1024);
+                r->detected = 1; r->level = AEGIS_LEVEL_MED; return 1;
+            }
+        }
+    }
+    r->detected = 0; return 0;
+}
+static int check_dev_nodes(aegis_result_t *r) {
+    if (aegis_file_exists("/dev/qemu_pipe") || aegis_file_exists("/dev/goldfish_pipe")) {
+        snprintf(r->evidence, sizeof(r->evidence), "发现模拟器特征设备节点");
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH; return 1;
+    }
+    r->detected = 0; return 0;
+}
+static int check_qemu_prop(aegis_result_t *r) {
+    char buf[128];
+    #ifdef __ANDROID__
+    __system_property_get("ro.kernel.qemu", buf);
+    if (strcmp(buf, "1") == 0) {
+        snprintf(r->evidence, sizeof(r->evidence), "ro.kernel.qemu=1 (模拟器内核标志)");
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH; return 1;
+    }
+    #else
+    (void)buf;
+    #endif
+    r->detected = 0; return 0;
+}
+static int check_fingerprint(aegis_result_t *r) {
+    char buf[256];
+    #ifdef __ANDROID__
+    __system_property_get("ro.build.fingerprint", buf);
+    static const char *emu[] = { "generic", "sdk", "emulator", "vbox", "nox" };
+    for (int i = 0; i < 5; i++) {
+        if (aegis_strcasestr(buf, emu[i])) {
+            snprintf(r->evidence, sizeof(r->evidence), "Build.FINGERPRINT 含模拟器关键词: %s", emu[i]);
+            r->detected = 1; r->level = AEGIS_LEVEL_HIGH; return 1;
+        }
+    }
+    #else
+    (void)buf;
+    #endif
+    r->detected = 0; return 0;
 }

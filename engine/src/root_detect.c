@@ -107,6 +107,63 @@ static int check_exec_su(aegis_result_t *r) {
     return 0;
 }
 
+
+static int check_magisk_policy(aegis_result_t *r) {
+    if (aegis_file_exists("/data/adb/magisk/magiskpolicy")) {
+        snprintf(r->evidence, sizeof(r->evidence), "发现 magiskpolicy (Magisk SELinux 策略工具)");
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT; return 1;
+    } r->detected = 0; return 0;
+}
+static int check_ksu_service(aegis_result_t *r) {
+    if (aegis_file_exists("/data/adb/ksu/"))
+        { r->detected = 1; r->level = AEGIS_LEVEL_CRIT; snprintf(r->evidence, sizeof(r->evidence), "发现 KernelSU 模块目录"); return 1; }
+    r->detected = 0; return 0;
+}
+static int check_apatch(aegis_result_t *r) {
+    if (aegis_file_exists("/data/adb/apd"))
+        { r->detected = 1; r->level = AEGIS_LEVEL_CRIT; snprintf(r->evidence, sizeof(r->evidence), "发现 APatch 特征"); return 1; }
+    r->detected = 0; return 0;
+}
+static int check_busybox(aegis_result_t *r) {
+    if (aegis_file_exists("/system/xbin/busybox") || aegis_file_exists("/sbin/busybox"))
+        { r->detected = 1; r->level = AEGIS_LEVEL_HIGH; snprintf(r->evidence, sizeof(r->evidence), "发现 busybox (提权工具链)"); return 1; }
+    r->detected = 0; return 0;
+}
+static int check_magisk_mirror(aegis_result_t *r) {
+    char buf[4096];
+    long n = aegis_read_file("/proc/mounts", buf, sizeof(buf));
+    if (n > 0 && strstr(buf, "magisk"))
+        { r->detected = 1; r->level = AEGIS_LEVEL_CRIT; snprintf(r->evidence, sizeof(r->evidence), "发现 Magisk 镜像挂载"); return 1; }
+    r->detected = 0; return 0;
+}
+static int check_dm_verity(aegis_result_t *r) {
+    char buf[128];
+    #ifdef __ANDROID__
+    __system_property_get("ro.config.verity", buf);
+    if (strstr(buf, "disabled") || strstr(buf, "0"))
+        { r->detected = 1; r->level = AEGIS_LEVEL_HIGH; snprintf(r->evidence, sizeof(r->evidence), "dm-verity 被禁用 (系统分区可被篡改)"); return 1; }
+    #endif
+    r->detected = 0; return 0;
+}
+static int check_denylist(aegis_result_t *r) {
+    if (aegis_file_exists("/data/adb/magisk/denylist"))
+        { r->detected = 1; r->level = AEGIS_LEVEL_MED; snprintf(r->evidence, sizeof(r->evidence), "Magisk DenyList 已配置 (隐藏 Root 特征)"); return 1; }
+    r->detected = 0; return 0;
+}
+static int check_app_process_r(aegis_result_t *r) {
+    r->detected = 0; return 0;
+}
+
+/* 前向声明 */
+static int check_magisk_policy(aegis_result_t *r);
+static int check_ksu_service(aegis_result_t *r);
+static int check_apatch(aegis_result_t *r);
+static int check_busybox(aegis_result_t *r);
+static int check_magisk_mirror(aegis_result_t *r);
+static int check_dm_verity(aegis_result_t *r);
+static int check_denylist(aegis_result_t *r);
+static int check_app_process_r(aegis_result_t *r);
+
 int aegis_root_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     (void)cfg;
     int n = 0;
@@ -115,5 +172,13 @@ int aegis_root_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "test-keys签名"); check_build_testkey(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "系统分区rw挂载"); check_mount_rw(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "su执行测试"); check_exec_su(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "magiskpolicy检测"); check_magisk_policy(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "KernelSU检测"); check_ksu_service(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "APatch检测"); check_apatch(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "busybox检测"); check_busybox(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "Magisk镜像"); check_magisk_mirror(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "dm-verity检测"); check_dm_verity(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "DenyList检测"); check_denylist(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "app_process替换"); check_app_process_r(&r[n]); n++; }
     return n;
 }

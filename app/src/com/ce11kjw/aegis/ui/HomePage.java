@@ -56,7 +56,7 @@ public class HomePage extends LinearLayout {
         content.addView(title);
 
         TextView sub = new TextView(context);
-        sub.setText("设备安全环境检测 · v2.1.0");
+        sub.setText("设备安全环境检测 · v3.0.0");
         sub.setTextColor(Color.parseColor("#94A3B8"));
         sub.setTextSize(13);
         LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
@@ -161,7 +161,7 @@ public class HomePage extends LinearLayout {
         resultsContainer.removeAllViews();
         resultTitle.setText("检测结果 · 命中 " + countHit(items) + " 项");
 
-        for (int m = 0; m < 7; m++) {
+        for (int m = 0; m < 8; m++) {
             final int modIdx = m;
             int hit = 0, total = 0;
             for (int i = 0; i < items.length(); i++) {

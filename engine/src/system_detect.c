@@ -111,6 +111,13 @@ static int check_ld_preload(aegis_result_t *r) {
     return 0;
 }
 
+/* 前向声明 */
+static int check_secure_prop(aegis_result_t *r);
+static int check_selinux_runtime(aegis_result_t *r);
+static int check_kernel_ver(aegis_result_t *r);
+static int check_vpn_service(aegis_result_t *r);
+static int check_sec_flags(aegis_result_t *r);
+
 int aegis_system_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     (void)cfg;
     int n = 0;
@@ -120,5 +127,58 @@ int aegis_system_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "CapEff权限"); check_capeff(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "LD_PRELOAD检测"); check_ld_preload(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "属性联动检测"); check_prop_contradict(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "ro.secure标志"); check_secure_prop(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "SELinux运行时"); check_selinux_runtime(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "内核版本异常"); check_kernel_ver(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "VPN服务检测"); check_vpn_service(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "安全标志审计"); check_sec_flags(&r[n]); n++; }
     return n;
+}
+
+static int check_secure_prop(aegis_result_t *r) {
+    char buf[128];
+    #ifdef __ANDROID__
+    __system_property_get("ro.secure", buf);
+    if (strcmp(buf, "0") == 0) {
+        snprintf(r->evidence, sizeof(r->evidence), "ro.secure=0 (系统安全标志被关闭)");
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH; return 1;
+    }
+    #else
+    (void)buf;
+    #endif
+    r->detected = 0; return 0;
+}
+static int check_selinux_runtime(aegis_result_t *r) {
+    char buf[16];
+    long n = aegis_read_file("/sys/fs/selinux/enforce", buf, sizeof(buf));
+    if (n > 0) {
+        if (buf[0] == '0') {
+            snprintf(r->evidence, sizeof(r->evidence), "SELinux 运行时为 permissive (enforce=0)");
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT; return 1;
+        }
+    }
+    r->detected = 0; return 0;
+}
+static int check_kernel_ver(aegis_result_t *r) {
+    char buf[256];
+    long n = aegis_read_file("/proc/version", buf, sizeof(buf));
+    if (n > 0) {
+        if (strstr(buf, "SMP") == NULL) {
+            snprintf(r->evidence, sizeof(r->evidence), "内核非 SMP 构建 (异常内核)");
+            r->detected = 1; r->level = AEGIS_LEVEL_LOW; return 1;
+        }
+    }
+    r->detected = 0; return 0;
+}
+static int check_vpn_service(aegis_result_t *r) {
+    r->detected = 0; return 0;
+}
+static int check_sec_flags(aegis_result_t *r) {
+    char buf[1024];
+    long n = aegis_read_file("/proc/self/status", buf, sizeof(buf));
+    if (n > 0 && aegis_strcasestr(buf, "NoNewPrivs")) {
+        snprintf(r->evidence, sizeof(r->evidence), "进程 NoNewPrivs 标志异常");
+        r->detected = 1; r->level = AEGIS_LEVEL_LOW; return 1;
+    }
+    r->detected = 0; return 0;
 }

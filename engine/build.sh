@@ -15,12 +15,12 @@ build_arch() {
     $CC -shared -fPIC -O2 -I include -o out/lib/$arch/libaegis.so \
         src/aegis.c src/sha256.c src/debug_detect.c src/frida_detect.c \
         src/xposed_detect.c src/integrity.c src/emulator.c src/root_detect.c \
-        src/system_detect.c src/jni_bridge.c -llog
+        src/system_detect.c src/network.c src/jni_bridge.c -llog
     # 编译本架构可执行测试程序
     $CC -O2 -I include -o out/aegis_test_${arch} \
         test/test_engine.c src/aegis.c src/sha256.c src/debug_detect.c \
         src/frida_detect.c src/xposed_detect.c src/integrity.c \
-        src/emulator.c src/root_detect.c src/system_detect.c
+        src/emulator.c src/root_detect.c src/system_detect.c src/network.c
     echo ">>> $arch OK: out/lib/$arch/libaegis.so"
 }
 

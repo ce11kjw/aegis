@@ -14,6 +14,7 @@ add_library(aegis SHARED
     src/emulator.c
     src/root_detect.c
     src/system_detect.c
+    src/network.c
     src/jni_bridge.c
 )
 
@@ -32,5 +33,6 @@ add_executable(aegis_test
     src/emulator.c
     src/root_detect.c
     src/system_detect.c
+    src/network.c
 )
 target_include_directories(aegis_test PRIVATE include)

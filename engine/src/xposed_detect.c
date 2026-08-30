@@ -85,6 +85,14 @@ static int check_zygisk_libs(aegis_result_t *r) {
     return 0;
 }
 
+/* 前向声明 */
+static int check_xposed_jar(aegis_result_t *r);
+static int check_libxposed(aegis_result_t *r);
+static int check_installer_data(aegis_result_t *r);
+static int check_shamiko(aegis_result_t *r);
+static int check_classloader(aegis_result_t *r);
+static int check_taichi(aegis_result_t *r);
+
 int aegis_xposed_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     (void)cfg;
     int n = 0;
@@ -92,5 +100,52 @@ int aegis_xposed_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "系统属性检测"); check_system_prop(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "Xposed模块路径"); check_packages(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "Zygisk注入检测"); check_zygisk_libs(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "xposed.jar检测"); check_xposed_jar(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "libxposed检测"); check_libxposed(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "Installer数据"); check_installer_data(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "Shamiko隐藏"); check_shamiko(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "类加载器异常"); check_classloader(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "Taichi模块"); check_taichi(&r[n]); n++; }
     return n;
+}
+
+static int check_xposed_jar(aegis_result_t *r) {
+    if (aegis_file_exists("/system/framework/xposed.jar")) {
+        snprintf(r->evidence, sizeof(r->evidence), "存在 /system/framework/xposed.jar");
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT; return 1;
+    }
+    r->detected = 0; return 0;
+}
+static int check_libxposed(aegis_result_t *r) {
+    char buf[4096];
+    long n = aegis_read_file("/proc/self/maps", buf, sizeof(buf));
+    if (n > 0 && (strstr(buf, "libxposed_art") || strstr(buf, "libxposed_common"))) {
+        snprintf(r->evidence, sizeof(r->evidence), "进程加载了 libxposed 库");
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT; return 1;
+    }
+    r->detected = 0; return 0;
+}
+static int check_installer_data(aegis_result_t *r) {
+    if (aegis_file_exists("/data/data/de.robv.android.xposed.installer")) {
+        snprintf(r->evidence, sizeof(r->evidence), "发现 Xposed Installer 数据目录");
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH; return 1;
+    }
+    r->detected = 0; return 0;
+}
+static int check_shamiko(aegis_result_t *r) {
+    if (aegis_file_exists("/data/adb/modules/shamiko")) {
+        snprintf(r->evidence, sizeof(r->evidence), "发现 Shamiko 隐藏模块 (Zygisk 隐藏绕过)");
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH; return 1;
+    }
+    r->detected = 0; return 0;
+}
+static int check_classloader(aegis_result_t *r) {
+    r->detected = 0; return 0;  /* 需要 Java 层配合 */
+}
+static int check_taichi(aegis_result_t *r) {
+    if (aegis_file_exists("/data/adb/modules/taichi")) {
+        snprintf(r->evidence, sizeof(r->evidence), "发现 Taichi 模块");
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT; return 1;
+    }
+    r->detected = 0; return 0;
 }
