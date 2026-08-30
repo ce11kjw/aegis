@@ -1,0 +1,17 @@
+# 构建产物
+**/out/
+*.apk
+*.aar
+*.zip
+*.class
+*.jar
+
+# 密钥/证书 - 绝不上传!
+*.keystore
+*.jks
+*.key
+*.pem
+
+# 临时
+*.log
+/tmp/
