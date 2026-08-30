@@ -131,7 +131,6 @@ static int check_operator(aegis_result_t *r) {
 }
 
 /* 前向声明 */
-static int check_cpu_isa(aegis_result_t *r);
 static int check_baseband(aegis_result_t *r);
 static int check_gpu(aegis_result_t *r);
 static int check_battery(aegis_result_t *r);
@@ -159,7 +158,6 @@ int aegis_emulator_detect(const aegis_config_t *cfg, aegis_result_t *r, int max)
     if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "CPU核心数检测"); check_cpu_count(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "传感器数量检测"); check_sensors(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "运营商检测"); check_operator(&r[n]); n++; }
-    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "CPU指令集检测"); check_cpu_isa(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "基带版本检测"); check_baseband(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "GPU渲染器检测"); check_gpu(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "电池属性检测"); check_battery(&r[n]); n++; }
@@ -178,9 +176,7 @@ int aegis_emulator_detect(const aegis_config_t *cfg, aegis_result_t *r, int max)
     return n;
 }
 
-static int check_cpu_isa(aegis_result_t *r) {
-    r->detected = 0; return 0;
-}
+
 static int check_baseband(aegis_result_t *r) {
     char buf[128];
     #ifdef __ANDROID__

@@ -152,9 +152,7 @@ static int check_denylist(aegis_result_t *r) {
         { r->detected = 1; r->level = AEGIS_LEVEL_MED; snprintf(r->evidence, sizeof(r->evidence), "Magisk DenyList 已配置 (隐藏 Root 特征)"); return 1; }
     r->detected = 0; return 0;
 }
-static int check_app_process_r(aegis_result_t *r) {
-    r->detected = 0; return 0;
-}
+
 
 /* 前向声明 */
 static int check_magisk_policy(aegis_result_t *r);
@@ -164,7 +162,6 @@ static int check_busybox(aegis_result_t *r);
 static int check_magisk_mirror(aegis_result_t *r);
 static int check_dm_verity(aegis_result_t *r);
 static int check_denylist(aegis_result_t *r);
-static int check_app_process_r(aegis_result_t *r);
 static int check_bootloader(aegis_result_t *r);
 static int check_vbmeta(aegis_result_t *r);
 static int check_magisk_env(aegis_result_t *r);
@@ -176,7 +173,6 @@ static int check_magiskd(aegis_result_t *r);
 static int check_ksud(aegis_result_t *r);
 static int check_zygiskd(aegis_result_t *r);
 static int check_which_su(aegis_result_t *r);
-static int check_adb_dir(aegis_result_t *r);
 static int check_magisk_sbin(aegis_result_t *r);
 static int check_modules(aegis_result_t *r);
 static int check_zygisk_data(aegis_result_t *r);
@@ -207,7 +203,6 @@ int aegis_root_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "Magisk镜像"); check_magisk_mirror(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "dm-verity检测"); check_dm_verity(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "DenyList检测"); check_denylist(&r[n]); n++; }
-    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "app_process替换"); check_app_process_r(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "bootloader解锁"); check_bootloader(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "vbmeta校验"); check_vbmeta(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "Magisk环境变量"); check_magisk_env(&r[n]); n++; }
@@ -472,19 +467,6 @@ static int check_which_su(aegis_result_t *r) {
     return 0;
 }
 
-/* 25. /data/adb 权限检测: 可访问说明被 root 管理 */
-static int check_adb_dir(aegis_result_t *r) {
-    /* /data/adb 是 Magisk/KSU 数据根, 普通应用不可读 */
-    char buf[16];
-    FILE *f = fopen("/data/adb/magisk", "r");
-    if (f) { fclose(f); r->detected = 0; return 0; } /* 已由路径检测覆盖 */
-    struct stat st;
-    if (stat("/data/adb", &st) == 0) {
-        /* 能 stat 到说明 SELinux 放行, 本身不异常, 由其他项判定 */
-    }
-    r->detected = 0;
-    return 0;
-}
 
 /* ====== 增强3: Magisk深层目录 / KernelSU内核特征 ====== */
 

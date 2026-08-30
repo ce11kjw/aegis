@@ -115,7 +115,6 @@ static int check_ld_preload(aegis_result_t *r) {
 static int check_secure_prop(aegis_result_t *r);
 static int check_selinux_runtime(aegis_result_t *r);
 static int check_kernel_ver(aegis_result_t *r);
-static int check_vpn_service(aegis_result_t *r);
 static int check_sec_flags(aegis_result_t *r);
 
 /* 前向声明 */
@@ -145,7 +144,6 @@ int aegis_system_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "ro.secure标志"); check_secure_prop(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "SELinux运行时"); check_selinux_runtime(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "内核版本异常"); check_kernel_ver(&r[n]); n++; }
-    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "VPN服务检测"); check_vpn_service(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "安全标志审计"); check_sec_flags(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "开机时间异常"); check_uptime(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "init进程异常"); check_init_proc(&r[n]); n++; }
@@ -198,9 +196,7 @@ static int check_kernel_ver(aegis_result_t *r) {
     }
     r->detected = 0; return 0;
 }
-static int check_vpn_service(aegis_result_t *r) {
-    r->detected = 0; return 0;
-}
+
 static int check_sec_flags(aegis_result_t *r) {
     char buf[1024];
     long n = aegis_read_file("/proc/self/status", buf, sizeof(buf));

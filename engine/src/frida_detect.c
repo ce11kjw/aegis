@@ -162,8 +162,6 @@ static int check_v8_maps(aegis_result_t *r);
 static int check_thread_count(aegis_result_t *r);
 static int check_memfd(aegis_result_t *r);
 static int check_signal_set(aegis_result_t *r);
-static int check_text_mod(aegis_result_t *r);
-static int check_frida_sock(aegis_result_t *r);
 static int check_multi_hook(aegis_result_t *r);
 static int check_js_threads(aegis_result_t *r);
 
@@ -186,8 +184,6 @@ int aegis_frida_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     if (n < max) { r[n].module = AEGIS_MOD_FRIDA; snprintf(r[n].name, sizeof(r[n].name), "线程数异常"); check_thread_count(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_FRIDA; snprintf(r[n].name, sizeof(r[n].name), "memfd匿名内存"); check_memfd(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_FRIDA; snprintf(r[n].name, sizeof(r[n].name), "异常信号处理"); check_signal_set(&r[n]); n++; }
-    if (n < max) { r[n].module = AEGIS_MOD_FRIDA; snprintf(r[n].name, sizeof(r[n].name), "text段改写"); check_text_mod(&r[n]); n++; }
-    if (n < max) { r[n].module = AEGIS_MOD_FRIDA; snprintf(r[n].name, sizeof(r[n].name), "socketpair通信"); check_frida_sock(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_FRIDA; snprintf(r[n].name, sizeof(r[n].name), "多注入组合"); check_multi_hook(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_FRIDA; snprintf(r[n].name, sizeof(r[n].name), "JS引擎线程"); check_js_threads(&r[n]); n++; }
     return n;
@@ -379,23 +375,9 @@ static int check_signal_set(aegis_result_t *r) {
     return 0;
 }
 
-/* 17. .text 段被改写 (frida inline hook) */
-static int check_text_mod(aegis_result_t *r) {
-    char buf[4096];
-    FILE *f = fopen("/proc/self/maps", "r");
-    if (!f) { r->detected = 0; return 0; }
-    /* 检测是否有 W|X 的 .so 段 (已由完整性覆盖, 此处补充 executable+write) */
-    fclose(f);
-    r->detected = 0;
-    return 0;
-}
 
 /* 18. frida 的 socketpair 通信特征 */
-static int check_frida_sock(aegis_result_t *r) {
-    /* frida 通过 socketpair 与 agent 通信, 检查 fd 连接 */
-    r->detected = 0;
-    return 0;
-}
+
 
 /* 19. 调试端口组合: frida + 调试器同时 */
 static int check_multi_hook(aegis_result_t *r) {

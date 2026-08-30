@@ -40,7 +40,7 @@ if [ ! -f $KEYSTORE ]; then
     -validity 10000 -storepass aegis123 -keypass aegis123 -dname "CN=Aegis, O=Aegis, C=CN"
 fi
 $BT/apksigner sign --ks $KEYSTORE --ks-pass pass:aegis123 --key-pass pass:aegis123 \
-    --out $OUT/AegisGuard-v3.5.0.apk aligned.apk
+    --out $OUT/AegisGuard-v3.5.1.apk aligned.apk
 
-ls -la $OUT/AegisGuard-v3.5.0.apk
-echo "=== 构建完成: $OUT/AegisGuard-v3.5.0.apk ==="
+ls -la $OUT/AegisGuard-v3.5.1.apk
+echo "=== 构建完成: $OUT/AegisGuard-v3.5.1.apk ==="

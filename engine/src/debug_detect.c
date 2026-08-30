@@ -148,7 +148,6 @@ static int check_inline_hook(aegis_result_t *r) {
 static int check_seccomp(aegis_result_t *r);
 static int check_proc_state(aegis_result_t *r);
 static int check_dbg_ports(aegis_result_t *r);
-static int check_hw_breakpoint(aegis_result_t *r);
 static int check_app_process(aegis_result_t *r);
 static int check_fork_guard(aegis_result_t *r);
 
@@ -157,13 +156,11 @@ static int check_sig_handler(aegis_result_t *r);
 static int check_thread_states(aegis_result_t *r);
 static int check_wchan(aegis_result_t *r);
 static int check_dbg_fd(aegis_result_t *r);
-static int check_app_debuggable(aegis_result_t *r);
 static int check_debug_maps(aegis_result_t *r);
 static int check_page_faults(aegis_result_t *r);
 static int check_prologue(aegis_result_t *r);
 
 static int check_seccomp_deep(aegis_result_t *r);
-static int check_syscall_hook(aegis_result_t *r);
 int aegis_debug_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     (void)cfg;
     int n = 0;
@@ -176,19 +173,16 @@ int aegis_debug_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "Seccomp状态"); check_seccomp(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "进程状态异常"); check_proc_state(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "调试器端口扫描"); check_dbg_ports(&r[n]); n++; }
-    if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "硬件断点检测"); check_hw_breakpoint(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "app_process审计"); check_app_process(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "fork看护检测"); check_fork_guard(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "SIGTRAP捕获"); check_sig_handler(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "线程状态深度"); check_thread_states(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "wchan卡点"); check_wchan(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "fd异常审计"); check_dbg_fd(&r[n]); n++; }
-    if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "自身debuggable"); check_app_debuggable(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "maps调试注入"); check_debug_maps(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "页错误审计"); check_page_faults(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "prologue完整性"); check_prologue(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "seccomp深度检测"); check_seccomp_deep(&r[n]); n++; }
-    if (n < max) { r[n].module = AEGIS_MOD_DEBUG; snprintf(r[n].name, sizeof(r[n].name), "syscall注入检测"); check_syscall_hook(&r[n]); n++; }
     return n;
 }
 
@@ -249,11 +243,7 @@ static int check_dbg_ports(aegis_result_t *r) {
 }
 
 /* 10. 硬件断点检测: 调试寄存器 */
-static int check_hw_breakpoint(aegis_result_t *r) {
-    /* 通过 ptrace 读调试寄存器 (仅 ARM64 有效), 检测是否有硬件断点 */
-    r->detected = 0;  /* 需要 ARM 特定实现, 简化处理 */
-    return 0;
-}
+
 
 /* 11. app_process 检测: 是否被调试版替换 */
 static int check_app_process(aegis_result_t *r) {
@@ -381,17 +371,7 @@ static int check_dbg_fd(aegis_result_t *r) {
 }
 
 /* 17. 自身 debuggable 标志 */
-static int check_app_debuggable(aegis_result_t *r) {
-    char buf[64];
-    #ifdef __ANDROID__
-    __system_property_get("ro.debuggable", buf);
-    /* 该属性已在系统环境检测, 此处检测进程自身是否带调试标志 */
-    #else
-    (void)buf;
-    #endif
-    r->detected = 0;
-    return 0;
-}
+
 
 /* 18. /proc/self/maps 中调试器注入段 */
 static int check_debug_maps(aegis_result_t *r) {
@@ -482,8 +462,4 @@ static int check_seccomp_deep(aegis_result_t *r) {
 }
 
 /* 22. syscall 指令序列检测 (inline hook 深层) */
-static int check_syscall_hook(aegis_result_t *r) {
-    /* 在 ARM64 上 SVC #0 是 syscall 指令, 检查是否被改写 */
-    r->detected = 0;  /* 需要 ARM 汇编, 简化处理 */
-    return 0;
-}
+
