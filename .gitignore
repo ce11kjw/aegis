@@ -1,7 +1,5 @@
 # 构建产物
 **/out/
-*.apk
-*.aar
 *.zip
 *.class
 *.jar
