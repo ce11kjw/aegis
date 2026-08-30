@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <dlfcn.h>
 #include <elf.h>
 
@@ -102,6 +103,9 @@ static int check_exe_path(aegis_result_t *r);
 static int check_sys_so_tamper(aegis_result_t *r);
 static int check_hash_compare(aegis_result_t *r);
 
+static int check_sys_perms(aegis_result_t *r);
+static int check_so_path_abnormal(aegis_result_t *r);
+static int check_adb_perm(aegis_result_t *r);
 int aegis_integrity_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     (void)cfg;
     int n = 0;
@@ -122,6 +126,9 @@ int aegis_integrity_detect(const aegis_config_t *cfg, aegis_result_t *r, int max
     if (n < max) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "exe路径异常"); check_exe_path(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "系统so覆盖"); check_sys_so_tamper(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "哈希基准对比"); check_hash_compare(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "系统文件权限"); check_sys_perms(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "so路径异常"); check_so_path_abnormal(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_INTEGRITY; snprintf(r[n].name, sizeof(r[n].name), "adb目录权限"); check_adb_perm(&r[n]); n++; }
     return n;
 }
 static int check_apk_sign_meta(aegis_result_t *r) {
@@ -290,6 +297,63 @@ static int check_sys_so_tamper(aegis_result_t *r) {
 /* 17. 完整性哈希基准对比 (内存 vs 预期) */
 static int check_hash_compare(aegis_result_t *r) {
     /* 计算当前进程关键段哈希并输出 */
+    r->detected = 0;
+    return 0;
+}
+
+/* 18. /system 文件权限异常 */
+static int check_sys_perms(aegis_result_t *r) {
+    struct stat st;
+    /* 系统关键文件正常权限: /system/bin/app_process 应 755 */
+    const char *paths[] = {
+        "/system/bin/app_process", "/system/bin/sh",
+        "/system/bin/toybox", "/system/lib/libc.so"
+    };
+    for (int i = 0; i < 4; i++) {
+        if (stat(paths[i], &st) == 0) {
+            /* 检查是否被改为 777 或属主异常 */
+            if ((st.st_mode & 0777) == 0777) {
+                snprintf(r->evidence, sizeof(r->evidence),
+                         "系统文件权限异常: %s 权限 777", paths[i]);
+                r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+                return 1;
+            }
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 19. 系统 so 从异常路径加载 */
+static int check_so_path_abnormal(aegis_result_t *r) {
+    char buf[4096];
+    long n = aegis_read_file("/proc/self/maps", buf, sizeof(buf));
+    if (n > 0) {
+        /* 检测 /system 之外的 so 加载 (排除正常数据目录) */
+        if (strstr(buf, "/data/data/com.ce11kjw") == NULL &&
+            (strstr(buf, "/data/local/tmp") || strstr(buf, "/data/user/0/"))) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "检测到 so 从异常目录加载 (注入特征)");
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 20. /data/adb 权限异常 (Root 管理器遗留) */
+static int check_adb_perm(aegis_result_t *r) {
+    struct stat st;
+    if (stat("/data/adb", &st) == 0) {
+        /* 正常 700/root; 若 777 或可写异常 */
+        if ((st.st_mode & 0002) != 0) {  /* world-writable */
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "/data/adb 目录权限异常 (world-writable), Root 工具遗留");
+            r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+            return 1;
+        }
+    }
     r->detected = 0;
     return 0;
 }

@@ -128,6 +128,11 @@ static int check_overlayfs(aegis_result_t *r);
 static int check_kernel_mods(aegis_result_t *r);
 static int check_sepolicy(aegis_result_t *r);
 
+static int check_selinux_context(aegis_result_t *r);
+static int check_selinux_prev(aegis_result_t *r);
+static int check_kallsyms(aegis_result_t *r);
+static int check_sched_stat(aegis_result_t *r);
+static int check_cgroup(aegis_result_t *r);
 int aegis_system_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     (void)cfg;
     int n = 0;
@@ -150,6 +155,11 @@ int aegis_system_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "overlayfs挂载"); check_overlayfs(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "内核模块异常"); check_kernel_mods(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "sepolicy检测"); check_sepolicy(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "SELinux上下文"); check_selinux_context(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "SELinux历史审计"); check_selinux_prev(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "内核符号表"); check_kallsyms(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "调度统计异常"); check_sched_stat(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "cgroup异常"); check_cgroup(&r[n]); n++; }
     return n;
 }
 
@@ -347,6 +357,99 @@ static int check_sepolicy(aegis_result_t *r) {
         /* 正常 policy 是二进制, 仅检测可读性 */
         r->detected = 0;
         return 0;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 20. SELinux context 检测: 进程安全上下文 */
+static int check_selinux_context(aegis_result_t *r) {
+    char buf[256];
+    long n = aegis_read_file("/proc/self/attr/current", buf, sizeof(buf));
+    if (n > 0) {
+        buf[strcspn(buf, "\n")] = 0;
+        if (strstr(buf, "u:r:su:") || strstr(buf, "u:r:magisk:") ||
+            strstr(buf, "u:r:kernel:") || strstr(buf, "u:r:init:")) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "进程 SELinux context 异常: %s (非普通应用)", buf);
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+            return 1;
+        }
+        /* 正常 App 应是 u:r:untrusted_app:s0 */
+        if (!strstr(buf, "untrusted_app") && !strstr(buf, "priv_app")) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "SELinux context 非标准应用: %s", buf);
+            r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 21. /proc/self/attr/prev 历史 context 审计 */
+static int check_selinux_prev(aegis_result_t *r) {
+    char buf[256];
+    long n = aegis_read_file("/proc/self/attr/prev", buf, sizeof(buf));
+    if (n > 0) {
+        buf[strcspn(buf, "\n")] = 0;
+        if (strstr(buf, "su") || strstr(buf, "magisk")) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "进程历史 SELinux context 含提权: %s", buf);
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 22. 内核符号表可读性 (kallsyms) */
+static int check_kallsyms(aegis_result_t *r) {
+    char buf[256];
+    long n = aegis_read_file("/proc/kallsyms", buf, sizeof(buf));
+    if (n > 0) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "内核符号表可读 (kallsyms 可访问), 内核暴露 KASLR 地址");
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 23. 调度统计异常 (sched) */
+static int check_sched_stat(aegis_result_t *r) {
+    char buf[1024];
+    long n = aegis_read_file("/proc/self/sched", buf, sizeof(buf));
+    if (n > 0) {
+        const char *p = aegis_strcasestr(buf, "nr_switches");
+        if (p) {
+            unsigned long sw = strtoul(p + 12, NULL, 10);
+            if (sw > 1000000) {
+                snprintf(r->evidence, sizeof(r->evidence),
+                         "进程调度切换次数异常: %lu (被调试/注入特征)", sw);
+                r->detected = 1; r->level = AEGIS_LEVEL_MED;
+                return 1;
+            }
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 24. cgroup 异常 */
+static int check_cgroup(aegis_result_t *r) {
+    char buf[1024];
+    long n = aegis_read_file("/proc/self/cgroup", buf, sizeof(buf));
+    if (n > 0) {
+        /* 正常 App 在 /uid_<uid>/pid_<pid> 下 */
+        if (aegis_strcasestr(buf, "root") || aegis_strcasestr(buf, "//")) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "cgroup 路径异常 (含 root/空路径), 提权特征");
+            r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+            return 1;
+        }
     }
     r->detected = 0;
     return 0;

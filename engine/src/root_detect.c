@@ -190,6 +190,8 @@ static int check_ksu_dev(aegis_result_t *r);
 static int check_mountinfo(aegis_result_t *r);
 static int check_initrc(aegis_result_t *r);
 
+static int check_syscall_table(aegis_result_t *r);
+static int check_kernel_symbols(aegis_result_t *r);
 int aegis_root_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     (void)cfg;
     int n = 0;
@@ -229,6 +231,8 @@ int aegis_root_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "KSU设备节点"); check_ksu_dev(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "mountinfo镜像"); check_mountinfo(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "init.rc检测"); check_initrc(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "syscall表暴露"); check_syscall_table(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "内核Root符号"); check_kernel_symbols(&r[n]); n++; }
     return n;
 }
 
@@ -692,6 +696,39 @@ static int check_initrc(aegis_result_t *r) {
             snprintf(r->evidence, sizeof(r->evidence),
                      "内核指定异常 init: %s (自定义注入)", initpath);
             r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 38. 内核 syscall 表可读性 (被 hook 检测) */
+static int check_syscall_table(aegis_result_t *r) {
+    /* /proc/kallsyms 若可读且含 sys_call_table 说明内核暴露 */
+    char buf[2048];
+    long n = aegis_read_file("/proc/kallsyms", buf, sizeof(buf));
+    if (n > 0 && aegis_strcasestr(buf, "sys_call_table")) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "内核 syscall 表符号暴露 (kallsyms 含 sys_call_table)");
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 39. 内核符号调试信息 */
+static int check_kernel_symbols(aegis_result_t *r) {
+    char buf[2048];
+    long n = aegis_read_file("/proc/kallsyms", buf, sizeof(buf));
+    if (n > 0) {
+        /* 检查是否含 Magisk/KSU 特有符号 */
+        if (aegis_strcasestr(buf, "magisk") || aegis_strcasestr(buf, "ksu") ||
+            aegis_strcasestr(buf, "kpatch")) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "内核符号含 Root 特征 (magisk/ksu/kpatch)");
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
             return 1;
         }
     }
