@@ -15,34 +15,28 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import com.ce11kjw.aegis.ui.HomePage;
-import com.ce11kjw.aegis.ui.ResultsPage;
-import com.ce11kjw.aegis.ui.SettingsPage;
+import com.ce11kjw.aegis.ui.KnowledgeBasePage;
 
 /**
- * MainActivity - 三页导航主界面
- * 首页 / 结果 / 设置 + 渐变深色背景 + 双层嵌套玻璃
+ * MainActivity - 两页导航主界面
+ * 🛡️ 检测 (首页: 检测+结果一体) | 📚 知识库
  */
 public class MainActivity extends Activity {
 
     private FrameLayout contentArea;
     private HomePage homePage;
-    private ResultsPage resultsPage;
-    private SettingsPage settingsPage;
+    private KnowledgeBasePage knowledgePage;
 
-    // 底部导航状态
-    private TextView navHome, navResults, navSettings;
+    private TextView navHome, navKnowledge;
     private static final int COLOR_ACTIVE = Color.parseColor("#22D3EE");
     private static final int COLOR_INACTIVE = Color.parseColor("#64748B");
 
-    // 检测结果缓存
     private JSONArray resultItems;
-    private int lastScore = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // ===== 根布局: 渐变深色背景 =====
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable bg = new GradientDrawable(
@@ -50,23 +44,19 @@ public class MainActivity extends Activity {
             new int[] { Color.parseColor("#0A0F1A"), Color.parseColor("#131B2E") });
         root.setBackground(bg);
 
-        // ===== 内容区 (三页切换) =====
+        // ===== 内容区 =====
         contentArea = new FrameLayout(this);
         contentArea.setLayoutParams(new LinearLayout.LayoutParams(-1, 0, 1));
         root.addView(contentArea);
 
-        // 创建三个页面
         homePage = new HomePage(this, new Runnable() {
             @Override public void run() { runScan(); }
         });
-        resultsPage = new ResultsPage(this);
-        settingsPage = new SettingsPage(this);
+        knowledgePage = new KnowledgeBasePage(this);
 
         contentArea.addView(homePage, new FrameLayout.LayoutParams(-1, -1));
-        contentArea.addView(resultsPage, new FrameLayout.LayoutParams(-1, -1));
-        contentArea.addView(settingsPage, new FrameLayout.LayoutParams(-1, -1));
-        resultsPage.setVisibility(View.GONE);
-        settingsPage.setVisibility(View.GONE);
+        contentArea.addView(knowledgePage, new FrameLayout.LayoutParams(-1, -1));
+        knowledgePage.setVisibility(View.GONE);
 
         // ===== 底部导航 =====
         LinearLayout navBar = new LinearLayout(this);
@@ -81,22 +71,16 @@ public class MainActivity extends Activity {
         navLp.setMargins(dp(16), dp(0), dp(16), dp(16));
         root.addView(navBar, navLp);
 
-        // 三个导航按钮
-        navHome = makeNavItem("🛡️ 首页", true);
-        navResults = makeNavItem("📊 结果", false);
-        navSettings = makeNavItem("⚙️ 设置", false);
+        navHome = makeNavItem("🛡️ 检测", true);
+        navKnowledge = makeNavItem("📚 知识库", false);
         navBar.addView(navHome, new LinearLayout.LayoutParams(0, -1, 1));
-        navBar.addView(navResults, new LinearLayout.LayoutParams(0, -1, 1));
-        navBar.addView(navSettings, new LinearLayout.LayoutParams(0, -1, 1));
+        navBar.addView(navKnowledge, new LinearLayout.LayoutParams(0, -1, 1));
 
         navHome.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { switchPage(0); }
         });
-        navResults.setOnClickListener(new View.OnClickListener() {
+        navKnowledge.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { switchPage(1); }
-        });
-        navSettings.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { switchPage(2); }
         });
 
         setContentView(root);
@@ -115,23 +99,15 @@ public class MainActivity extends Activity {
 
     private void switchPage(int index) {
         homePage.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
-        resultsPage.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
-        settingsPage.setVisibility(index == 2 ? View.VISIBLE : View.GONE);
+        knowledgePage.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
 
         navHome.setTextColor(index == 0 ? COLOR_ACTIVE : COLOR_INACTIVE);
-        navResults.setTextColor(index == 1 ? COLOR_ACTIVE : COLOR_INACTIVE);
-        navSettings.setTextColor(index == 2 ? COLOR_ACTIVE : COLOR_INACTIVE);
+        navKnowledge.setTextColor(index == 1 ? COLOR_ACTIVE : COLOR_INACTIVE);
         navHome.setBackground(roundRect(index == 0 ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
-        navResults.setBackground(roundRect(index == 1 ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
-        navSettings.setBackground(roundRect(index == 2 ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
-
-        // 切换到结果页时如果有数据则刷新展示
-        if (index == 1 && resultItems != null) {
-            resultsPage.showResults(resultItems);
-        }
+        navKnowledge.setBackground(roundRect(index == 1 ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
     }
 
-    /** 执行检测 (后台线程 + 回主线程更新) */
+    /** 执行检测: 后台线程, 完成后在首页原地更新 (不跳页) */
     private void runScan() {
         Toast.makeText(this, "检测中...", Toast.LENGTH_SHORT).show();
         new Thread(new Runnable() {
@@ -141,22 +117,10 @@ public class MainActivity extends Activity {
                     final JSONObject obj = new JSONObject(json);
                     final int score = obj.getInt("score");
                     resultItems = obj.getJSONArray("items");
-                    lastScore = score;
-                    final int count = obj.getInt("count");
 
                     runOnUiThread(new Runnable() {
                         @Override public void run() {
-                            // 统计命中项
-                            int hit = 0;
-                            for (int i = 0; i < resultItems.length(); i++) {
-                                try {
-                                    if (resultItems.getJSONObject(i).optInt("detected") == 1) hit++;
-                                } catch (Exception e) { }
-                            }
-                            homePage.updateResult(score, hit, count);
-                            // 切到结果页展示
-                            resultsPage.showResults(resultItems);
-                            switchPage(1);
+                            homePage.showResults(score, resultItems);
                             Toast.makeText(MainActivity.this,
                                 "检测完成 · 得分 " + score + "/100", Toast.LENGTH_SHORT).show();
                         }
