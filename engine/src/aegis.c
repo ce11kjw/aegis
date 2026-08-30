@@ -67,6 +67,33 @@ int aegis_file_exists(const char *path) {
     return stat(path, &st) == 0;
 }
 
+/* ====== 公共进程扫描 ====== */
+int aegis_scan_proc_name(const char **names, int count,
+                         char *matched, size_t matched_sz, char *pid_buf, size_t pid_sz) {
+    DIR *d = opendir("/proc");
+    if (!d) return 0;
+    struct dirent *e;
+    while ((e = readdir(d))) {
+        if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
+        char pcomm[64], ppath[128];
+        AEGIS_SNPRINTF(ppath, sizeof(ppath), "/proc/%s/comm", e->d_name);
+        if (aegis_read_file(ppath, pcomm, sizeof(pcomm)) <= 0) continue;
+        pcomm[strcspn(pcomm, "\n")] = 0;
+        for (int i = 0; i < count; i++) {
+            if (strcmp(pcomm, names[i]) == 0) {
+                if (matched && matched_sz)
+                    AEGIS_SNPRINTF(matched, matched_sz, "%s", names[i]);
+                if (pid_buf && pid_sz)
+                    AEGIS_SNPRINTF(pid_buf, pid_sz, "%s", e->d_name);
+                closedir(d);
+                return 1;
+            }
+        }
+    }
+    closedir(d);
+    return 0;
+}
+
 /* ====== 调度与评分 ====== */
 
 void aegis_init(void) {

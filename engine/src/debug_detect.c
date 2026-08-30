@@ -96,7 +96,7 @@ static int check_timing(aegis_result_t *r) {
     gettimeofday(&t2, NULL);
     long us = (t2.tv_sec - t1.tv_sec) * 1000000L + (t2.tv_usec - t1.tv_usec);
     /* 正常情况下 10 万次整数加法 < 5ms, 若 > 100ms 说明代码被注入/单步 */
-    if (us > 100000) {
+    if (us > AEGIS_TIMING_US_MAX) {
         snprintf(r->evidence, sizeof(r->evidence),
                  "指令时间差异常: 10万次加法耗时 %ldms (正常 <5ms), 疑似单步调试", us/1000);
         r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
@@ -108,28 +108,15 @@ static int check_timing(aegis_result_t *r) {
 
 /* 5. /proc 全局扫描: 找调试器进程 */
 static int check_debug_procs(aegis_result_t *r) {
-    DIR *d = opendir("/proc");
-    if (!d) { r->detected = 0; return 0; }
-    struct dirent *e;
     static const char *dbg[] = { "gdb", "lldb", "gdbserver", "lldb-server",
                                  "android_server", "ida", "ida64", "frida" };
-    while ((e = readdir(d))) {
-        if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
-        char pcomm[64], ppath[128];
-        snprintf(ppath, sizeof(ppath), "/proc/%s/comm", e->d_name);
-        if (aegis_read_file(ppath, pcomm, sizeof(pcomm)) <= 0) continue;
-        pcomm[strcspn(pcomm, "\n")] = 0;
-        for (int i = 0; i < (int)(sizeof(dbg)/sizeof(dbg[0])); i++) {
-            if (strcmp(pcomm, dbg[i]) == 0) {
-                snprintf(r->evidence, sizeof(r->evidence),
-                         "发现调试器进程: %s (PID=%s)", pcomm, e->d_name);
-                closedir(d);
-                r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
-                return 1;
-            }
-        }
+    char matched[32], pid[16];
+    if (aegis_scan_proc_name(dbg, 8, matched, sizeof(matched), pid, sizeof(pid))) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "发现调试器进程: %s (PID=%s)", matched, pid);
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+        return 1;
     }
-    closedir(d);
     r->detected = 0;
     return 0;
 }

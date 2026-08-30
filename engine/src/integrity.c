@@ -56,7 +56,7 @@ static int check_maps_integrity(aegis_result_t *r) {
         }
     }
     fclose(f);
-    if (suspicious > 3) {
+    if (suspicious > AEGIS_ANON_MAP_MAX) {
         snprintf(r->evidence, sizeof(r->evidence),
                  "发现 %d 个匿名可执行映射 (rwx), 疑似代码注入", suspicious);
         r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
@@ -199,7 +199,7 @@ static int check_jni_path(aegis_result_t *r) {
             }
             p += 3;
         }
-        if (suspicious > 3) {
+        if (suspicious > AEGIS_ANON_MAP_MAX) {
             snprintf(r->evidence, sizeof(r->evidence),
                      "%d 个 so 从其他应用目录加载 (注入特征)", suspicious);
             r->detected = 1; r->level = AEGIS_LEVEL_HIGH;

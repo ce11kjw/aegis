@@ -206,7 +206,7 @@ static int check_fd_pipe(aegis_result_t *r) {
         }
     }
     closedir(d);
-    if (pipe_count > 8) {
+    if (pipe_count > AEGIS_PIPE_MAX) {
         snprintf(r->evidence, sizeof(r->evidence),
                  "进程打开 %d 个管道 (正常 <8), 疑似注入通信", pipe_count);
         r->detected = 1; r->level = AEGIS_LEVEL_MED;
@@ -218,24 +218,14 @@ static int check_fd_pipe(aegis_result_t *r) {
 
 /* 8. frida-server 进程全局扫描 */
 static int check_frida_proc(aegis_result_t *r) {
-    DIR *d = opendir("/proc");
-    if (!d) { r->detected = 0; return 0; }
-    struct dirent *e;
-    char pcomm[64], ppath[128];
-    while ((e = readdir(d))) {
-        if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
-        snprintf(ppath, sizeof(ppath), "/proc/%s/comm", e->d_name);
-        if (aegis_read_file(ppath, pcomm, sizeof(pcomm)) <= 0) continue;
-        pcomm[strcspn(pcomm, "\n")] = 0;
-        if (strstr(pcomm, "frida") || strstr(pcomm, "fridaserver")) {
-            snprintf(r->evidence, sizeof(r->evidence),
-                     "发现 frida-server 进程: %s (PID=%s)", pcomm, e->d_name);
-            closedir(d);
-            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
-            return 1;
-        }
+    static const char *frida[] = { "frida", "frida-server", "fridaserver", "frida-helper" };
+    char matched[32], pid[16];
+    if (aegis_scan_proc_name(frida, 4, matched, sizeof(matched), pid, sizeof(pid))) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "发现 frida-server 进程: %s (PID=%s)", matched, pid);
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+        return 1;
     }
-    closedir(d);
     r->detected = 0;
     return 0;
 }
@@ -331,7 +321,7 @@ static int check_thread_count(aegis_result_t *r) {
     }
     closedir(d);
     /* 普通 App 线程 5-15 个, 注入后明显增多 */
-    if (count > 30) {
+    if (count > AEGIS_THREAD_MAX) {
         snprintf(r->evidence, sizeof(r->evidence),
                  "线程数异常: %d 个 (正常 <20), 疑似注入", count);
         r->detected = 1; r->level = AEGIS_LEVEL_MED;

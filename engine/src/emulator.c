@@ -86,7 +86,7 @@ static int check_cpu_count(aegis_result_t *r) {
     int cores = 0;
     const char *p = buf;
     while ((p = strstr(p, "processor"))) { cores++; p += 9; }
-    if (cores < 2) {  /* 真实手机几乎都 >= 2 核 */
+    if (cores < AEGIS_CPU_MIN) {  /* 真实手机几乎都 >= 2 核 */
         snprintf(r->evidence, sizeof(r->evidence),
                  "CPU 核心数异常: %d (真实手机通常 >=2)", cores);
         r->detected = 1; r->level = AEGIS_LEVEL_MED;
@@ -103,7 +103,7 @@ static int check_sensors(aegis_result_t *r) {
     char buf[32];
     if (fgets(buf, sizeof(buf), f)) {
         int n = atoi(buf);
-        if (n > 0 && n < 3) {  /* 1-2 个传感器基本必是模拟器 */
+        if (n > 0 && n < AEGIS_SENSOR_MIN) {  /* 1-2 个传感器基本必是模拟器 */
             snprintf(r->evidence, sizeof(r->evidence),
                      "传感器数量异常: %d 个 (真实手机通常 5+ 个)", n);
             pclose(f);

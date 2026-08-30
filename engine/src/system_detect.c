@@ -422,7 +422,7 @@ static int check_sched_stat(aegis_result_t *r) {
         const char *p = aegis_strcasestr(buf, "nr_switches");
         if (p) {
             unsigned long sw = strtoul(p + 12, NULL, 10);
-            if (sw > 1000000) {
+            if (sw > AEGIS_SWITCH_MAX) {
                 snprintf(r->evidence, sizeof(r->evidence),
                          "进程调度切换次数异常: %lu (被调试/注入特征)", sw);
                 r->detected = 1; r->level = AEGIS_LEVEL_MED;

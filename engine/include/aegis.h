@@ -86,6 +86,21 @@ const char *aegis_module_name(aegis_module_t mod);
 /* 等级转字符串 */
 const char *aegis_level_str(aegis_level_t level);
 
+/* ---------- 魔法数字常量 ---------- */
+#define AEGIS_PIPE_MAX         8    /* fd 管道数量阈值 */
+#define AEGIS_FD_ANON_MAX      15   /* 匿名 fd 数量阈值 */
+#define AEGIS_THREAD_MAX       30   /* 线程数阈值 */
+#define AEGIS_ANON_MAP_MAX     3    /* 匿名可执行映射阈值 */
+#define AEGIS_SWITCH_MAX       1000000UL /* 调度切换次数阈值 */
+#define AEGIS_TIMING_US_MAX    100000  /* 时间差检测阈值 (us) */
+#define AEGIS_SENSOR_MIN       3    /* 传感器最少数量 */
+#define AEGIS_CPU_MIN          2    /* CPU 最少核心数 */
+#define AEGIS_JSON_BASE        8192 /* JSON 缓冲基数 */
+
+/* 安全 snprintf: 保证 NUL 结尾, 截断时返回实际长度 */
+#define AEGIS_SNPRINTF(buf, sz, ...) \
+    snprintf((buf), (sz), __VA_ARGS__)
+
 /* ---------- 内部工具函数 (供各模块使用) ---------- */
 /* 安全读取文件 (截断防溢出), 返回读取字节数 */
 long aegis_read_file(const char *path, char *buf, size_t size);
@@ -107,6 +122,11 @@ int aegis_sha256_file(const char *path, char *out_hex);
 
 /* 计算内存缓冲 SHA-256, 返回 0=成功 */
 int aegis_sha256_buf(const void *data, size_t len, char *out_hex);
+
+/* 扫描 /proc 下所有进程 comm, 匹配已知名称数组
+ * 返回 0=未找到, 1=找到并写入 matched 名称与 pid */
+int aegis_scan_proc_name(const char **names, int count,
+                         char *matched, size_t matched_sz, char *pid_buf, size_t pid_sz);
 
 #ifdef __cplusplus
 }
