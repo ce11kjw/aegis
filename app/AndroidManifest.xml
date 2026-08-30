@@ -10,7 +10,8 @@
         android:icon="@drawable/ic_launcher"
         android:allowBackup="false"
         android:supportsRtl="true">
-        <activity android:name="com.ce11kjw.aegis.MainActivity">
+        <activity android:name="com.ce11kjw.aegis.MainActivity"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
