@@ -1,131 +1,171 @@
 package com.ce11kjw.aegis;
 
 import android.app.Activity;
-import android.os.Bundle;
-import android.widget.*;
-import android.view.View;
-import android.view.ViewGroup;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.text.Html;
-import org.json.JSONObject;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Bundle;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Toast;
 import org.json.JSONArray;
+import org.json.JSONObject;
 
+import com.ce11kjw.aegis.ui.HomePage;
+import com.ce11kjw.aegis.ui.ResultsPage;
+import com.ce11kjw.aegis.ui.SettingsPage;
+
+/**
+ * MainActivity - 三页导航主界面
+ * 首页 / 结果 / 设置 + 渐变深色背景 + 双层嵌套玻璃
+ */
 public class MainActivity extends Activity {
-    private LinearLayout resultLayout;
-    private TextView scoreText, countText, statusText;
-    private Button scanBtn, exportBtn;
-    private JSONArray items;
-    private int score;
+
+    private FrameLayout contentArea;
+    private HomePage homePage;
+    private ResultsPage resultsPage;
+    private SettingsPage settingsPage;
+
+    // 底部导航状态
+    private TextView navHome, navResults, navSettings;
+    private static final int COLOR_ACTIVE = Color.parseColor("#22D3EE");
+    private static final int COLOR_INACTIVE = Color.parseColor("#64748B");
+
+    // 检测结果缓存
+    private JSONArray resultItems;
+    private int lastScore = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // ===== 根布局: 渐变深色背景 =====
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(24, 24, 24, 24);
-        root.setBackgroundColor(Color.parseColor("#0D1117"));
+        GradientDrawable bg = new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            new int[] { Color.parseColor("#0A0F1A"), Color.parseColor("#131B2E") });
+        root.setBackground(bg);
 
-        // 标题
-        TextView title = new TextView(this);
-        title.setText("Aegis 安全检测引擎 v1.0.1");
-        title.setTextColor(Color.parseColor("#58A6FF"));
-        title.setTextSize(20);
-        title.setTypeface(null, Typeface.BOLD);
-        title.setPadding(0, 0, 0, 16);
-        root.addView(title);
+        // ===== 内容区 (三页切换) =====
+        contentArea = new FrameLayout(this);
+        contentArea.setLayoutParams(new LinearLayout.LayoutParams(-1, 0, 1));
+        root.addView(contentArea);
 
-        // 状态
-        statusText = new TextView(this);
-        statusText.setText("就绪 - 点击下方按钮开始检测");
-        statusText.setTextColor(Color.parseColor("#8B949E"));
-        statusText.setTextSize(14);
-        statusText.setPadding(0, 0, 0, 24);
-        root.addView(statusText);
-
-        // 分数区
-        scoreText = new TextView(this);
-        scoreText.setText("得分: --/100");
-        scoreText.setTextColor(Color.parseColor("#58A6FF"));
-        scoreText.setTextSize(48);
-        scoreText.setTypeface(null, Typeface.BOLD);
-        scoreText.setGravity(android.view.Gravity.CENTER);
-        scoreText.setPadding(0, 0, 0, 8);
-        root.addView(scoreText);
-
-        countText = new TextView(this);
-        countText.setText("检测项: 0");
-        countText.setTextColor(Color.parseColor("#8B949E"));
-        countText.setTextSize(16);
-        countText.setGravity(android.view.Gravity.CENTER);
-        countText.setPadding(0, 0, 0, 32);
-        root.addView(countText);
-
-        // 扫描按钮
-        scanBtn = new Button(this);
-        scanBtn.setText("开始安全检测");
-        scanBtn.setTextColor(Color.WHITE);
-        scanBtn.setBackgroundColor(Color.parseColor("#238636"));
-        scanBtn.setPadding(0, 16, 0, 16);
-        scanBtn.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { runScan(); }
+        // 创建三个页面
+        homePage = new HomePage(this, new Runnable() {
+            @Override public void run() { runScan(); }
         });
-        root.addView(scanBtn);
+        resultsPage = new ResultsPage(this);
+        settingsPage = new SettingsPage(this);
 
-        // 导出按钮
-        exportBtn = new Button(this);
-        exportBtn.setText("导出检测报告");
-        exportBtn.setTextColor(Color.WHITE);
-        exportBtn.setBackgroundColor(Color.parseColor("#1F6FEB"));
-        exportBtn.setPadding(0, 16, 0, 16);
-        exportBtn.setVisibility(View.GONE);
-        exportBtn.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { exportReport(); }
+        contentArea.addView(homePage, new FrameLayout.LayoutParams(-1, -1));
+        contentArea.addView(resultsPage, new FrameLayout.LayoutParams(-1, -1));
+        contentArea.addView(settingsPage, new FrameLayout.LayoutParams(-1, -1));
+        resultsPage.setVisibility(View.GONE);
+        settingsPage.setVisibility(View.GONE);
+
+        // ===== 底部导航 =====
+        LinearLayout navBar = new LinearLayout(this);
+        navBar.setOrientation(LinearLayout.HORIZONTAL);
+        navBar.setGravity(Gravity.CENTER);
+        navBar.setPadding(dp(8), dp(8), dp(8), dp(8));
+        GradientDrawable navBg = new GradientDrawable();
+        navBg.setColor(Color.parseColor("#0F1522"));
+        navBg.setCornerRadius(dp(24));
+        navBg.setStroke(dp(1), Color.parseColor("#1A22D3EE"));
+        LinearLayout.LayoutParams navLp = new LinearLayout.LayoutParams(-1, dp(64));
+        navLp.setMargins(dp(16), dp(0), dp(16), dp(16));
+        root.addView(navBar, navLp);
+
+        // 三个导航按钮
+        navHome = makeNavItem("🛡️ 首页", true);
+        navResults = makeNavItem("📊 结果", false);
+        navSettings = makeNavItem("⚙️ 设置", false);
+        navBar.addView(navHome, new LinearLayout.LayoutParams(0, -1, 1));
+        navBar.addView(navResults, new LinearLayout.LayoutParams(0, -1, 1));
+        navBar.addView(navSettings, new LinearLayout.LayoutParams(0, -1, 1));
+
+        navHome.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { switchPage(0); }
         });
-        LinearLayout.LayoutParams expLp = new LinearLayout.LayoutParams(-1, -2);
-        expLp.topMargin = 12;
-        root.addView(exportBtn, expLp);
+        navResults.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { switchPage(1); }
+        });
+        navSettings.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { switchPage(2); }
+        });
 
-        // 结果列表
-        resultLayout = new LinearLayout(this);
-        resultLayout.setOrientation(LinearLayout.VERTICAL);
-        resultLayout.setPadding(0, 16, 0, 0);
-        root.addView(resultLayout);
-
-        ScrollView sv = new ScrollView(this);
-        sv.addView(root);
-        setContentView(sv);
+        setContentView(root);
     }
 
+    private TextView makeNavItem(String text, boolean active) {
+        TextView tv = new TextView(this);
+        tv.setText(text);
+        tv.setGravity(Gravity.CENTER);
+        tv.setTextSize(12);
+        tv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        tv.setTextColor(active ? COLOR_ACTIVE : COLOR_INACTIVE);
+        tv.setBackground(roundRect(active ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
+        return tv;
+    }
+
+    private void switchPage(int index) {
+        homePage.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
+        resultsPage.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
+        settingsPage.setVisibility(index == 2 ? View.VISIBLE : View.GONE);
+
+        navHome.setTextColor(index == 0 ? COLOR_ACTIVE : COLOR_INACTIVE);
+        navResults.setTextColor(index == 1 ? COLOR_ACTIVE : COLOR_INACTIVE);
+        navSettings.setTextColor(index == 2 ? COLOR_ACTIVE : COLOR_INACTIVE);
+        navHome.setBackground(roundRect(index == 0 ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
+        navResults.setBackground(roundRect(index == 1 ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
+        navSettings.setBackground(roundRect(index == 2 ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
+
+        // 切换到结果页时如果有数据则刷新展示
+        if (index == 1 && resultItems != null) {
+            resultsPage.showResults(resultItems);
+        }
+    }
+
+    /** 执行检测 (后台线程 + 回主线程更新) */
     private void runScan() {
-        statusText.setText("检测中...");
-        scanBtn.setEnabled(false);
+        Toast.makeText(this, "检测中...", Toast.LENGTH_SHORT).show();
         new Thread(new Runnable() {
             @Override public void run() {
                 try {
-                    String json = AegisNative.runAll();
+                    final String json = AegisNative.runAll();
                     final JSONObject obj = new JSONObject(json);
-                    score = obj.getInt("score");
-                    items = obj.getJSONArray("items");
+                    final int score = obj.getInt("score");
+                    resultItems = obj.getJSONArray("items");
+                    lastScore = score;
                     final int count = obj.getInt("count");
+
                     runOnUiThread(new Runnable() {
                         @Override public void run() {
-                            scoreText.setText("得分: " + score + "/100");
-                            countText.setText("检测项: " + count);
-                            if (score < 30) scoreText.setTextColor(Color.parseColor("#3FB950"));
-                            else if (score < 60) scoreText.setTextColor(Color.parseColor("#D29922"));
-                            else scoreText.setTextColor(Color.parseColor("#F85149"));
-                            exportBtn.setVisibility(View.VISIBLE);
-                            showResults();
-                            statusText.setText("检测完成");
-                            scanBtn.setEnabled(true);
+                            // 统计命中项
+                            int hit = 0;
+                            for (int i = 0; i < resultItems.length(); i++) {
+                                try {
+                                    if (resultItems.getJSONObject(i).optInt("detected") == 1) hit++;
+                                } catch (Exception e) { }
+                            }
+                            homePage.updateResult(score, hit, count);
+                            // 切到结果页展示
+                            resultsPage.showResults(resultItems);
+                            switchPage(1);
+                            Toast.makeText(MainActivity.this,
+                                "检测完成 · 得分 " + score + "/100", Toast.LENGTH_SHORT).show();
                         }
                     });
-                } catch (Exception e) {
+                } catch (final Exception e) {
                     runOnUiThread(new Runnable() {
                         @Override public void run() {
-                            statusText.setText("错误: " + e.getMessage());
-                            scanBtn.setEnabled(true);
+                            Toast.makeText(MainActivity.this,
+                                "检测失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
                         }
                     });
                 }
@@ -133,67 +173,15 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    private void showResults() {
-        resultLayout.removeAllViews();
-        for (int i = 0; i < items.length(); i++) {
-            try {
-                JSONObject item = items.getJSONObject(i);
-                final String name = item.getString("name");
-                final String module = item.getString("module_name");
-                final int detected = item.getInt("detected");
-                final int level = item.getInt("level");
-                final String evidence = item.optString("evidence", "");
-                final String levelStr = item.getString("level_str");
-
-                TextView tv = new TextView(this);
-                String icon = detected == 1 ? "⚠️" : "✅";
-                String alertColor = detected == 1 ? "#F85149" : "#3FB950";
-                if (level <= 1) alertColor = "#8B949E";
-                tv.setText(Html.fromHtml(
-                    icon + " <b>" + name + "</b><br>" +
-                    "<font color='" + alertColor + "'>" + module + " | " + levelStr + "</font>"
-                ));
-                tv.setTextColor(Color.parseColor("#C9D1D9"));
-                tv.setTextSize(14);
-                tv.setPadding(16, 12, 16, 12);
-                tv.setBackgroundColor(Color.parseColor("#161B22"));
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-                lp.bottomMargin = 6;
-                resultLayout.addView(tv, lp);
-
-                if (detected == 1 && evidence.length() > 0) {
-                    TextView ev = new TextView(this);
-                    ev.setText("→ " + evidence);
-                    ev.setTextColor(Color.parseColor("#F0883E"));
-                    ev.setTextSize(12);
-                    ev.setPadding(32, 0, 16, 12);
-                    ev.setBackgroundColor(Color.parseColor("#161B22"));
-                    resultLayout.addView(ev, new LinearLayout.LayoutParams(-1, -2));
-                }
-            } catch (Exception e) { /* skip bad item */ }
-        }
+    private android.graphics.drawable.GradientDrawable roundRect(int color, int radius) {
+        android.graphics.drawable.GradientDrawable g =
+            new android.graphics.drawable.GradientDrawable();
+        g.setColor(color);
+        g.setCornerRadius(radius);
+        return g;
     }
 
-    private void exportReport() {
-        // 复制到剪贴板
-        StringBuilder sb = new StringBuilder();
-        sb.append("=== Aegis 安全检测报告 ===\n");
-        sb.append("总分: ").append(score).append("/100\n");
-        sb.append("检测项: ").append(items.length()).append("\n\n");
-        for (int i = 0; i < items.length(); i++) {
-            try {
-                JSONObject item = items.getJSONObject(i);
-                sb.append("[").append(item.getInt("detected") == 1 ? "!!" : "--").append("] ");
-                sb.append(item.getString("module_name")).append(" | ");
-                sb.append(item.getString("name")).append(" | ");
-                sb.append(item.getString("level_str")).append("\n");
-                String ev = item.optString("evidence", "");
-                if (ev.length() > 0) sb.append("    证据: ").append(ev).append("\n");
-            } catch (Exception e) { }
-        }
-        android.content.ClipboardManager cm = (android.content.ClipboardManager)
-            getSystemService(CLIPBOARD_SERVICE);
-        cm.setPrimaryClip(android.content.ClipData.newPlainText("report", sb.toString()));
-        Toast.makeText(this, "报告已复制到剪贴板", Toast.LENGTH_SHORT).show();
+    private int dp(float v) {
+        return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
     }
 }
