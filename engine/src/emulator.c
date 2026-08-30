@@ -3,6 +3,7 @@
  * 原创思路: 硬件层特征 / CPU指令 / 传感器异常 / 设备属性联动
  */
 #include "aegis.h"
+#include <dirent.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -139,6 +140,16 @@ static int check_dev_nodes(aegis_result_t *r);
 static int check_qemu_prop(aegis_result_t *r);
 static int check_fingerprint(aegis_result_t *r);
 
+/* 前向声明 */
+static int check_cpu_hw(aegis_result_t *r);
+static int check_input_dev(aegis_result_t *r);
+static int check_bt_addr(aegis_result_t *r);
+static int check_wlan_mac(aegis_result_t *r);
+static int check_nfc(aegis_result_t *r);
+static int check_gps(aegis_result_t *r);
+static int check_batt_status(aegis_result_t *r);
+static int check_serial(aegis_result_t *r);
+
 int aegis_emulator_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     (void)cfg;
     int n = 0;
@@ -156,6 +167,14 @@ int aegis_emulator_detect(const aegis_config_t *cfg, aegis_result_t *r, int max)
     if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "设备节点检测"); check_dev_nodes(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "qemu内核标志"); check_qemu_prop(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "Fingerprint指纹"); check_fingerprint(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "CPU型号异常"); check_cpu_hw(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "输入设备过少"); check_input_dev(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "蓝牙地址异常"); check_bt_addr(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "无线MAC异常"); check_wlan_mac(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "NFC缺失"); check_nfc(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "GPS硬件"); check_gps(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "电池异常"); check_batt_status(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_EMULATOR; snprintf(r[n].name, sizeof(r[n].name), "序列号异常"); check_serial(&r[n]); n++; }
     return n;
 }
 
@@ -250,4 +269,150 @@ static int check_fingerprint(aegis_result_t *r) {
     (void)buf;
     #endif
     r->detected = 0; return 0;
+}
+
+/* 15. CPU 型号异常: 模拟器 CPU 非 ARM 特征 */
+static int check_cpu_hw(aegis_result_t *r) {
+    char buf[1024];
+    long n = aegis_read_file("/proc/cpuinfo", buf, sizeof(buf));
+    if (n <= 0) { r->detected = 0; return 0; }
+    /* 检测 CPU part/implementer (ARM 特征) */
+    if (aegis_strcasestr(buf, "implementer") == NULL &&
+        aegis_strcasestr(buf, "CPU implementer") == NULL) {
+        /* x86 模拟器没有 ARM implementer */
+        if (aegis_strcasestr(buf, "GenuineIntel") || aegis_strcasestr(buf, "AuthenticAMD")) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "CPU 为 x86 (GenuineIntel/AMD), 非真实 ARM 设备");
+            r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 16. 输入设备异常: 模拟器无真实触摸 */
+static int check_input_dev(aegis_result_t *r) {
+    DIR *d = opendir("/dev/input");
+    if (!d) { r->detected = 0; return 0; }
+    struct dirent *e;
+    int count = 0;
+    while ((e = readdir(d))) {
+        if (e->d_name[0] == '.') continue;
+        count++;
+    }
+    closedir(d);
+    if (count < 2) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "输入设备过少: %d 个 (真实手机 >2, 含触摸屏)", count);
+        r->detected = 1; r->level = AEGIS_LEVEL_MED;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 17. 蓝牙特征: 模拟器通常无蓝牙地址 */
+static int check_bt_addr(aegis_result_t *r) {
+    /* 检查蓝牙 MAC 是否存在 */
+    FILE *f = fopen("/sys/class/bluetooth/hci0/address", "r");
+    if (!f) { r->detected = 0; return 0; }
+    char buf[32];
+    if (fgets(buf, sizeof(buf), f)) {
+        /* 模拟器蓝牙地址常为全 0 或异常 */
+        if (strncmp(buf, "00:00:00", 8) == 0) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "蓝牙地址异常: %s (模拟器特征)", buf);
+            fclose(f);
+            r->detected = 1; r->level = AEGIS_LEVEL_MED;
+            return 1;
+        }
+    }
+    fclose(f);
+    r->detected = 0;
+    return 0;
+}
+
+/* 18. 无线 MAC 特征 */
+static int check_wlan_mac(aegis_result_t *r) {
+    FILE *f = fopen("/sys/class/net/wlan0/address", "r");
+    if (!f) { r->detected = 0; return 0; }
+    char buf[32];
+    if (fgets(buf, sizeof(buf), f)) {
+        /* 模拟器 MAC 常为 02:00:00:00:00:00 等 */
+        if (strncmp(buf, "02:00:00", 8) == 0 || strncmp(buf, "00:00:00", 8) == 0) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "无线 MAC 异常: %s (模拟器特征)", buf);
+            fclose(f);
+            r->detected = 1; r->level = AEGIS_LEVEL_MED;
+            return 1;
+        }
+    }
+    fclose(f);
+    r->detected = 0;
+    return 0;
+}
+
+/* 19. NFC 传感器缺失 */
+static int check_nfc(aegis_result_t *r) {
+    if (!aegis_file_exists("/sys/class/nfc")) {
+        /* 很多真机有 NFC, 但非绝对; 仅作为弱信号 */
+        r->detected = 0;
+        return 0;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 20. GPS 硬件检测 */
+static int check_gps(aegis_result_t *r) {
+    /* GPS 设备节点 */
+    static const char *gps_nodes[] = {
+        "/dev/gps", "/sys/class/gps", "/dev/ttyGPS"
+    };
+    for (int i = 0; i < 3; i++) {
+        if (aegis_file_exists(gps_nodes[i])) {
+            r->detected = 0;
+            return 0;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 21. 电池健康信息异常 */
+static int check_batt_status(aegis_result_t *r) {
+    char buf[64];
+    /* 检测电池健康/技术字段 */
+    long n = aegis_read_file("/sys/class/power_supply/battery/technology", buf, sizeof(buf));
+    if (n > 0) {
+        buf[strcspn(buf, "\n")] = 0;
+        if (strstr(buf, "Unknown") || strstr(buf, "unknown")) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "电池技术字段异常: %s (模拟器特征)", buf);
+            r->detected = 1; r->level = AEGIS_LEVEL_MED;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 22. 串行号/硬件序列异常 */
+static int check_serial(aegis_result_t *r) {
+    char buf[128];
+    #ifdef __ANDROID__
+    __system_property_get("ro.serialno", buf);
+    /* 模拟器序列号常为 emulator 或全 0 */
+    if (strstr(buf, "emulator") || strncmp(buf, "0", 1) == 0 && strlen(buf) < 5) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "设备序列号异常: %s (模拟器特征)", buf);
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+        return 1;
+    }
+    #else
+    (void)buf;
+    #endif
+    r->detected = 0;
+    return 0;
 }

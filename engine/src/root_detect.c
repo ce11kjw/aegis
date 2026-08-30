@@ -184,6 +184,11 @@ static int check_ksu_kernel(aegis_result_t *r);
 static int check_apatch_kernel(aegis_result_t *r);
 static int check_selinux_mismatch(aegis_result_t *r);
 static int check_build_tamper(aegis_result_t *r);
+static int check_modules_update(aegis_result_t *r);
+static int check_postfs(aegis_result_t *r);
+static int check_ksu_dev(aegis_result_t *r);
+static int check_mountinfo(aegis_result_t *r);
+static int check_initrc(aegis_result_t *r);
 
 int aegis_root_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     (void)cfg;
@@ -219,6 +224,11 @@ int aegis_root_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "APatch内核特征"); check_apatch_kernel(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "SELinux不一致"); check_selinux_mismatch(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "build属性篡改"); check_build_tamper(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "modules_update"); check_modules_update(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "post-fs-data"); check_postfs(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "KSU设备节点"); check_ksu_dev(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "mountinfo镜像"); check_mountinfo(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_ROOT; snprintf(r[n].name, sizeof(r[n].name), "init.rc检测"); check_initrc(&r[n]); n++; }
     return n;
 }
 
@@ -609,6 +619,82 @@ static int check_build_tamper(aegis_result_t *r) {
     #else
     (void)a; (void)b; (void)c;
     #endif
+    r->detected = 0;
+    return 0;
+}
+
+/* 33. modules_update 目录 (模块待更新) */
+static int check_modules_update(aegis_result_t *r) {
+    if (aegis_file_exists("/data/adb/modules_update")) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "发现 modules_update 目录 (Magisk 模块更新队列)");
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 34. post-fs-data 开机脚本 */
+static int check_postfs(aegis_result_t *r) {
+    if (aegis_file_exists("/data/adb/post-fs-data.d")) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "发现 post-fs-data.d 开机脚本目录 (Magisk 特征)");
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 35. KernelSU 设备节点 */
+static int check_ksu_dev(aegis_result_t *r) {
+    static const char *nodes[] = {
+        "/dev/ksu", "/dev/kernelsu", "/dev/magisk", "/dev/block/magisk"
+    };
+    for (int i = 0; i < 4; i++) {
+        if (aegis_file_exists(nodes[i])) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "发现 Root 管理器设备节点: %s", nodes[i]);
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 36. mountinfo overlay 深度检测 (Magisk 镜像) */
+static int check_mountinfo(aegis_result_t *r) {
+    char buf[4096];
+    long n = aegis_read_file("/proc/self/mountinfo", buf, sizeof(buf));
+    if (n > 0) {
+        if (aegis_strcasestr(buf, "magisk") || aegis_strcasestr(buf, "overlay") && aegis_strcasestr(buf, "upperdir")) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "mountinfo 含 Magisk/overlay 特征");
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 37. init.rc 被改检测 */
+static int check_initrc(aegis_result_t *r) {
+    char buf[2048];
+    long n = aegis_read_file("/proc/cmdline", buf, sizeof(buf));
+    if (n > 0 && aegis_strcasestr(buf, "init=")) {
+        const char *p = aegis_strcasestr(buf, "init=");
+        char initpath[128] = "";
+        sscanf(p, "init=%127s", initpath);
+        if (initpath[0] && !strstr(initpath, "/init")) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "内核指定异常 init: %s (自定义注入)", initpath);
+            r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+            return 1;
+        }
+    }
     r->detected = 0;
     return 0;
 }

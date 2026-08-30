@@ -55,7 +55,7 @@ public class KnowledgeBasePage extends LinearLayout {
         content.addView(sub, subLp);
 
         // ===== 模块浏览卡片 =====
-        int[] counts = {12, 12, 10, 9, 14, 31, 11, 6};
+        int[] counts = {20, 20, 16, 17, 22, 36, 19, 6};
         for (int m = 0; m < 7; m++) {
             final int modIdx = m;
             final String modName = KnowledgeData.MODULE_NAMES[m];

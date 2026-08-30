@@ -16,7 +16,7 @@ extern "C" {
 /* ---------- 基础常量 ---------- */
 #define AEGIS_MODULE_NAME_MAX   32
 #define AEGIS_EVIDENCE_MAX      256
-#define AEGIS_MAX_RESULTS       128
+#define AEGIS_MAX_RESULTS       256
 
 /* 风险等级 */
 typedef enum {

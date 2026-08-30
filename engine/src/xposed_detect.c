@@ -93,6 +93,14 @@ static int check_shamiko(aegis_result_t *r);
 static int check_classloader(aegis_result_t *r);
 static int check_taichi(aegis_result_t *r);
 
+/* 前向声明 */
+static int check_dobby(aegis_result_t *r);
+static int check_xhook(aegis_result_t *r);
+static int check_libart_mod(aegis_result_t *r);
+static int check_tmp_so(aegis_result_t *r);
+static int check_xposed_props(aegis_result_t *r);
+static int check_dalvik_cache(aegis_result_t *r);
+
 int aegis_xposed_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     (void)cfg;
     int n = 0;
@@ -106,6 +114,12 @@ int aegis_xposed_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "Shamiko隐藏"); check_shamiko(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "类加载器异常"); check_classloader(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "Taichi模块"); check_taichi(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "Dobby hook"); check_dobby(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "xhook/ehook"); check_xhook(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "libart异常"); check_libart_mod(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "tmp注入so"); check_tmp_so(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "Xposed属性"); check_xposed_props(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_XPOSED; snprintf(r[n].name, sizeof(r[n].name), "dalvik缓存"); check_dalvik_cache(&r[n]); n++; }
     return n;
 }
 
@@ -148,4 +162,102 @@ static int check_taichi(aegis_result_t *r) {
         r->detected = 1; r->level = AEGIS_LEVEL_CRIT; return 1;
     }
     r->detected = 0; return 0;
+}
+
+/* 11. Dobby hook 框架检测 */
+static int check_dobby(aegis_result_t *r) {
+    char buf[4096];
+    long n = aegis_read_file("/proc/self/maps", buf, sizeof(buf));
+    if (n > 0 && (aegis_strcasestr(buf, "libdobby") || aegis_strcasestr(buf, "dobby"))) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "检测到 Dobby hook 框架映射");
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 12. xhook/ehook 框架检测 */
+static int check_xhook(aegis_result_t *r) {
+    char buf[4096];
+    long n = aegis_read_file("/proc/self/maps", buf, sizeof(buf));
+    if (n > 0 && (aegis_strcasestr(buf, "xhook") || aegis_strcasestr(buf, "ehook") ||
+        aegis_strcasestr(buf, "bhook"))) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "检测到 GOT hook 框架映射 (xhook/ehook/bhook)");
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 13. 系统框架被替换: libart 改动 */
+static int check_libart_mod(aegis_result_t *r) {
+    char buf[4096];
+    long n = aegis_read_file("/proc/self/maps", buf, sizeof(buf));
+    if (n > 0) {
+        /* 检测 libart 是否从非标准路径加载 */
+        const char *p = aegis_strcasestr(buf, "libart");
+        if (p && !strstr(p, "/system/") && !strstr(p, "/apex/")) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "libart 从异常路径加载 (框架注入特征): %.80s", p);
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 14. /data/local/tmp 注入 so 检测 */
+static int check_tmp_so(aegis_result_t *r) {
+    char buf[4096];
+    long n = aegis_read_file("/proc/self/maps", buf, sizeof(buf));
+    if (n > 0 && strstr(buf, "/data/local/tmp") && strstr(buf, ".so")) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "从 /data/local/tmp 加载 so (注入特征): %.80s",
+                 strstr(buf, "/data/local/tmp"));
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 15. 系统属性框架特征: xposed 相关属性 */
+static int check_xposed_props(aegis_result_t *r) {
+    char buf[128];
+    #ifdef __ANDROID__
+    __system_property_get("ro.modversion", buf);
+    if (strstr(buf, "xposed") || strstr(buf, "Xposed")) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "系统属性含 Xposed 特征: ro.modversion=%s", buf);
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+        return 1;
+    }
+    #else
+    (void)buf;
+    #endif
+    r->detected = 0;
+    return 0;
+}
+
+/* 16. 模块激活残留: dalvik 缓存异常 */
+static int check_dalvik_cache(aegis_result_t *r) {
+    static const char *paths[] = {
+        "/data/dalvik-cache/arm64/xposed", "/data/dalvik-cache/xposed",
+        "/cache/xposed", "/data/user/0/org.lsposed.manager"
+    };
+    for (int i = 0; i < (int)(sizeof(paths)/sizeof(paths[0])); i++) {
+        if (aegis_file_exists(paths[i])) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "发现 Xposed 框架残留: %s", paths[i]);
+            r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
 }

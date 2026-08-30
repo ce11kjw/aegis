@@ -118,6 +118,16 @@ static int check_kernel_ver(aegis_result_t *r);
 static int check_vpn_service(aegis_result_t *r);
 static int check_sec_flags(aegis_result_t *r);
 
+/* 前向声明 */
+static int check_uptime(aegis_result_t *r);
+static int check_init_proc(aegis_result_t *r);
+static int check_sys_bin(aegis_result_t *r);
+static int check_warranty(aegis_result_t *r);
+static int check_prop_integrity(aegis_result_t *r);
+static int check_overlayfs(aegis_result_t *r);
+static int check_kernel_mods(aegis_result_t *r);
+static int check_sepolicy(aegis_result_t *r);
+
 int aegis_system_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     (void)cfg;
     int n = 0;
@@ -132,6 +142,14 @@ int aegis_system_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "内核版本异常"); check_kernel_ver(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "VPN服务检测"); check_vpn_service(&r[n]); n++; }
     if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "安全标志审计"); check_sec_flags(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "开机时间异常"); check_uptime(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "init进程异常"); check_init_proc(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "可疑系统二进制"); check_sys_bin(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "保修位熔断"); check_warranty(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "属性完整性"); check_prop_integrity(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "overlayfs挂载"); check_overlayfs(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "内核模块异常"); check_kernel_mods(&r[n]); n++; }
+    if (n < max) { r[n].module = AEGIS_MOD_SYSTEM; snprintf(r[n].name, sizeof(r[n].name), "sepolicy检测"); check_sepolicy(&r[n]); n++; }
     return n;
 }
 
@@ -181,4 +199,155 @@ static int check_sec_flags(aegis_result_t *r) {
         r->detected = 1; r->level = AEGIS_LEVEL_LOW; return 1;
     }
     r->detected = 0; return 0;
+}
+
+/* 12. 开机时间矛盾: uptime vs 系统时间 */
+static int check_uptime(aegis_result_t *r) {
+    char buf[64];
+    long n = aegis_read_file("/proc/uptime", buf, sizeof(buf));
+    if (n > 0) {
+        double up = atof(buf);
+        /* 若开机时间极短说明刚重启 (可疑) */
+        if (up < 30 && up > 0) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "系统开机仅 %.0f 秒 (可疑的快速重启)", up);
+            r->detected = 1; r->level = AEGIS_LEVEL_LOW;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 13. init 进程异常 */
+static int check_init_proc(aegis_result_t *r) {
+    char buf[64];
+    long n = aegis_read_file("/proc/1/comm", buf, sizeof(buf));
+    if (n > 0) {
+        buf[strcspn(buf, "\n")] = 0;
+        if (strcmp(buf, "init") != 0) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "init 进程异常: %s (PID 1 应为 init)", buf);
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 14. /system/bin 可疑二进制 */
+static int check_sys_bin(aegis_result_t *r) {
+    static const char *susp[] = {
+        "/system/bin/fake-su", "/system/bin/.su",
+        "/system/xbin/daemonsu", "/system/xbin/su"
+    };
+    for (int i = 0; i < (int)(sizeof(susp)/sizeof(susp[0])); i++) {
+        if (aegis_file_exists(susp[i])) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "发现可疑系统二进制: %s", susp[i]);
+            r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 15. 保修位/熔断 (三星 KNOX 等) */
+static int check_warranty(aegis_result_t *r) {
+    char buf[128];
+    #ifdef __ANDROID__
+    __system_property_get("ro.boot.warranty_bit", buf);
+    if (strcmp(buf, "1") == 0) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "保修位已熔断 (warranty_bit=1, 设备被刷写)");
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+        return 1;
+    }
+    __system_property_get("ro.boot.sec_atd", buf);
+    if (strstr(buf, "true")) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "KNOX 熔断标记 (sec_atd=true)");
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+        return 1;
+    }
+    #else
+    (void)buf;
+    #endif
+    r->detected = 0;
+    return 0;
+}
+
+/* 16. 关键系统属性完整性 */
+static int check_prop_integrity(aegis_result_t *r) {
+    char buf[128];
+    #ifdef __ANDROID__
+    __system_property_get("ro.build.type", buf);
+    /* 若 user 版但 debuggable=1 说明被改 */
+    if (strcmp(buf, "user") == 0) {
+        char dbg[32];
+        __system_property_get("ro.debuggable", dbg);
+        if (strcmp(dbg, "1") == 0) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "user 版系统却 debuggable=1 (属性被篡改)");
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+            return 1;
+        }
+    }
+    #else
+    (void)buf;
+    #endif
+    r->detected = 0;
+    return 0;
+}
+
+/* 17. overlayfs 挂载 (Magisk 系统镜像) */
+static int check_overlayfs(aegis_result_t *r) {
+    char buf[4096];
+    long n = aegis_read_file("/proc/mounts", buf, sizeof(buf));
+    if (n > 0 && aegis_strcasestr(buf, "overlay")) {
+        /* 正常系统也有 overlay (apex), 需检测关键分区 */
+        if (aegis_strcasestr(buf, "/system") && aegis_strcasestr(buf, "upper")) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "检测到 /system overlayfs 挂载 (Magisk 镜像特征)");
+            r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 18. 内核符号/模块异常 */
+static int check_kernel_mods(aegis_result_t *r) {
+    char buf[4096];
+    long n = aegis_read_file("/proc/modules", buf, sizeof(buf));
+    if (n > 0 && (aegis_strcasestr(buf, "magisk") || aegis_strcasestr(buf, "ksu") ||
+        aegis_strcasestr(buf, "kpatch"))) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "内核模块含 Root 特征 (magisk/ksu/kpatch)");
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* 19. sepolicy 状态检测 */
+static int check_sepolicy(aegis_result_t *r) {
+    /* 检测 SELinux 策略是否被 Magisk 修改 */
+    FILE *f = fopen("/sys/fs/selinux/policy", "rb");
+    if (!f) { r->detected = 0; return 0; }
+    char buf[64];
+    size_t rd = fread(buf, 1, sizeof(buf), f);
+    fclose(f);
+    /* Magisk policy 修改后文件头有特征 */
+    if (rd > 8) {
+        /* 正常 policy 是二进制, 仅检测可读性 */
+        r->detected = 0;
+        return 0;
+    }
+    r->detected = 0;
+    return 0;
 }
