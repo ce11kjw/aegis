@@ -55,7 +55,7 @@ public class KnowledgeBasePage extends LinearLayout {
         content.addView(sub, subLp);
 
         // ===== 模块浏览卡片 =====
-        int[] counts = {12, 12, 10, 9, 14, 20, 11, 6};
+        int[] counts = {12, 12, 10, 9, 14, 31, 11, 6};
         for (int m = 0; m < 7; m++) {
             final int modIdx = m;
             final String modName = KnowledgeData.MODULE_NAMES[m];
@@ -234,7 +234,7 @@ public class KnowledgeBasePage extends LinearLayout {
             case 2: return new String[]{"内存映射Xposed特征","系统属性检测","Xposed模块路径","Zygisk注入检测"};
             case 3: return new String[]{"自身路径校验","匿名可执行映射","W+X so检测","so哈希校验"};
             case 4: return new String[]{"Build字段检测","硬件平台检测","属性联动检测","CPU核心数检测","传感器数量检测","运营商检测"};
-            case 5: return new String[]{"su二进制检测","Root管理器特征","test-keys签名","系统分区rw挂载","su执行测试"};
+            case 5: return new String[]{"su二进制检测","Root管理器特征","test-keys签名","系统分区rw挂载","su执行测试","magiskpolicy检测","KernelSU检测","APatch检测","busybox检测","Magisk镜像","dm-verity检测","DenyList检测","bootloader解锁","vbmeta校验","Magisk环境变量","内核cmdline","管理器APK","系统分区rw细查","Zygisk环境","magiskd守护进程","ksud守护进程","zygiskd守护进程","which su/magisk","Magisk隐藏挂载","模块枚举","Zygisk数据目录","KSU内核特征","APatch内核特征","SELinux不一致","build属性篡改"};
             case 7: return new String[]{"全局代理检测","VPN接口检测","用户CA证书检测","USB调试检测","ADB连接检测","可疑端口监听"};
             default: return new String[]{"系统调试状态","SELinux状态","编译类型","CapEff权限","LD_PRELOAD检测","属性联动检测"};
         }
