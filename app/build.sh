@@ -16,13 +16,15 @@ done
 
 echo "[1/5] aapt2 打包..."
 $BT/aapt2 compile --dir res -o $OUT/res.zip 2>/dev/null || true
+mkdir -p $OUT/gen
 $BT/aapt2 link -o $OUT/base.apk -I $PLATFORM \
     --manifest AndroidManifest.xml --auto-add-overlay \
+    --java $OUT/gen \
     $($BT/aapt2 dump configurations 2>/dev/null; [ -f $OUT/res.zip ] && echo "-R $OUT/res.zip")
 
 echo "[2/5] javac ..."
 javac -source 8 -target 8 -bootclasspath $PLATFORM \
-    -d $OUT/classes $(find src -name "*.java") 2>&1 | grep -v "bootstrap class path" || true
+    -d $OUT/classes $(find src -name "*.java") $(find $OUT/gen -name "*.java") 2>&1 | grep -v "bootstrap class path" || true
 
 echo "[3/5] d8 + 合并 .so ..."
 $BT/d8 --lib $PLATFORM --release --output $OUT $(find $OUT/classes -name "*.class")
@@ -40,7 +42,7 @@ if [ ! -f $KEYSTORE ]; then
     -validity 10000 -storepass aegis123 -keypass aegis123 -dname "CN=Aegis, O=Aegis, C=CN"
 fi
 $BT/apksigner sign --ks $KEYSTORE --ks-pass pass:aegis123 --key-pass pass:aegis123 \
-    --out $OUT/AegisGuard-v3.5.2.apk aligned.apk
+    --out $OUT/AegisGuard-v3.6.0.apk aligned.apk
 
-ls -la $OUT/AegisGuard-v3.5.2.apk
-echo "=== 构建完成: $OUT/AegisGuard-v3.5.2.apk ==="
+ls -la $OUT/AegisGuard-v3.6.0.apk
+echo "=== 构建完成: $OUT/AegisGuard-v3.6.0.apk ==="

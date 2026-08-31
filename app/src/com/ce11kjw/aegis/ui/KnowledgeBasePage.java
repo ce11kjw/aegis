@@ -7,6 +7,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.ImageView;
+import com.ce11kjw.aegis.ui.IconView;
 import android.widget.TextView;
 
 /**
@@ -65,9 +67,11 @@ public class KnowledgeBasePage extends LinearLayout {
             header.setOrientation(LinearLayout.HORIZONTAL);
             header.setGravity(Gravity.CENTER_VERTICAL);
 
-            TextView icon = new TextView(context);
-            icon.setText(moduleIcon(m));
-            icon.setTextSize(20);
+            ImageView icon = new ImageView(context);
+            icon.setImageResource(moduleIcon(m));
+            int isz = dp(22);
+            icon.setLayoutParams(new LinearLayout.LayoutParams(isz, isz));
+            icon.setColorFilter(Color.parseColor("#22D3EE"));
             header.addView(icon);
 
             TextView name = new TextView(context);
@@ -89,11 +93,12 @@ public class KnowledgeBasePage extends LinearLayout {
             badge.setBackground(roundRect(Color.parseColor("#16202E"), dp(10)));
             header.addView(badge);
 
-            TextView arrow = new TextView(context);
-            arrow.setText("▾");
-            arrow.setTextColor(Color.parseColor("#64748B"));
-            arrow.setTextSize(14);
-            LinearLayout.LayoutParams arrowLp = new LinearLayout.LayoutParams(-2, -2);
+            ImageView arrow = new ImageView(context);
+            arrow.setImageResource(IconView.ACT_CHEVRON);
+            int asz = dp(16);
+            arrow.setLayoutParams(new LinearLayout.LayoutParams(asz, asz));
+            arrow.setColorFilter(Color.parseColor("#64748B"));
+            LinearLayout.LayoutParams arrowLp = new LinearLayout.LayoutParams(asz, asz);
             arrowLp.leftMargin = dp(8);
             header.addView(arrow, arrowLp);
 
@@ -214,17 +219,8 @@ public class KnowledgeBasePage extends LinearLayout {
         parent.addView(c, lp);
     }
 
-    private String moduleIcon(int m) {
-        switch (m) {
-            case 0: return "🐞";
-            case 1: return "💉";
-            case 2: return "🧩";
-            case 3: return "🔐";
-            case 4: return "📱";
-            case 5: return "👑";
-            case 7: return "🌐";
-            default: return "🖥️";
-        }
+    private int moduleIcon(int m) {
+        return IconView.moduleIcon(m);
     }
 
     private String[] moduleItems(int m) {

@@ -8,6 +8,8 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.ImageView;
+import com.ce11kjw.aegis.ui.IconView;
 import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -180,10 +182,11 @@ public class HomePage extends LinearLayout {
             header.setOrientation(LinearLayout.HORIZONTAL);
             header.setGravity(Gravity.CENTER_VERTICAL);
 
-            TextView dot = new TextView(getContext());
-            dot.setText(hit > 0 ? "●" : "○");
-            dot.setTextColor(hit > 0 ? Color.parseColor("#EF4444") : Color.parseColor("#34D399"));
-            dot.setTextSize(14);
+            ImageView dot = new ImageView(getContext());
+            dot.setImageResource(hit > 0 ? IconView.ST_SHIELD_ALERT : IconView.ST_SHIELD_CHECK);
+            int dotsz = dp(16);
+            dot.setLayoutParams(new LinearLayout.LayoutParams(dotsz, dotsz));
+            dot.setColorFilter(hit > 0 ? Color.parseColor("#EF4444") : Color.parseColor("#34D399"));
             header.addView(dot);
 
             TextView name = new TextView(getContext());
@@ -207,11 +210,12 @@ public class HomePage extends LinearLayout {
             header.addView(badge);
 
             // 展开箭头
-            TextView arrow = new TextView(getContext());
-            arrow.setText("▾");
-            arrow.setTextColor(Color.parseColor("#64748B"));
-            arrow.setTextSize(14);
-            LinearLayout.LayoutParams arrowLp = new LinearLayout.LayoutParams(-2, -2);
+            ImageView arrow = new ImageView(getContext());
+            arrow.setImageResource(IconView.ACT_CHEVRON);
+            int asz = dp(16);
+            arrow.setLayoutParams(new LinearLayout.LayoutParams(asz, asz));
+            arrow.setColorFilter(Color.parseColor("#64748B"));
+            LinearLayout.LayoutParams arrowLp = new LinearLayout.LayoutParams(asz, asz);
             arrowLp.leftMargin = dp(8);
             header.addView(arrow, arrowLp);
 
@@ -261,10 +265,11 @@ public class HomePage extends LinearLayout {
             row.setPadding(dp(8), dp(8), dp(8), dp(8));
             row.setBackground(roundRect(Color.parseColor("#1E2433"), dp(12)));
 
-            TextView icon = new TextView(getContext());
-            icon.setText(detected == 1 ? "⚠" : "✓");
-            icon.setTextColor(detected == 1 ? Color.parseColor("#EF4444") : Color.parseColor("#34D399"));
-            icon.setTextSize(14);
+            ImageView icon = new ImageView(getContext());
+            icon.setImageResource(detected == 1 ? IconView.ST_SHIELD_ALERT : IconView.ST_SHIELD_CHECK);
+            int icsz = dp(15);
+            icon.setLayoutParams(new LinearLayout.LayoutParams(icsz, icsz));
+            icon.setColorFilter(detected == 1 ? Color.parseColor("#EF4444") : Color.parseColor("#34D399"));
             row.addView(icon);
 
             TextView tv = new TextView(getContext());

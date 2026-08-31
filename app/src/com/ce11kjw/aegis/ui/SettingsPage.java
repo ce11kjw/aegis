@@ -9,6 +9,8 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.ImageView;
+import com.ce11kjw.aegis.ui.IconView;
 import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -56,15 +58,34 @@ public class SettingsPage extends LinearLayout {
         content.addView(title);
 
         // ===== 📊 报告中心 =====
+        LinearLayout sec1row = new LinearLayout(context);
+        sec1row.setOrientation(LinearLayout.HORIZONTAL);
+        sec1row.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView sec1ic = new ImageView(context);
+        sec1ic.setImageResource(IconView.ACT_DOWNLOAD);
+        int s1sz = dp(14);
+        sec1ic.setLayoutParams(new LinearLayout.LayoutParams(s1sz, s1sz));
+        sec1ic.setColorFilter(Color.parseColor("#22D3EE"));
+        sec1row.addView(sec1ic);
         TextView sec1 = new TextView(context);
         sec1.setText("报告中心");
+        sec1.setTextColor(Color.parseColor("#94A3B8"));
+        sec1.setTextSize(12);
+        sec1.setTypeface(Typeface.MONOSPACE);
+        LinearLayout.LayoutParams s1l = new LinearLayout.LayoutParams(-2, -2);
+        s1l.leftMargin = dp(6);
+        sec1row.addView(sec1, s1l);
+        LinearLayout.LayoutParams s1rowLp = new LinearLayout.LayoutParams(-1, -2);
+        s1rowLp.topMargin = dp(20);
+        s1rowLp.bottomMargin = dp(8);
+        content.addView(sec1row, s1rowLp);
         sec1.setTextColor(Color.parseColor("#94A3B8"));
         sec1.setTextSize(12);
         sec1.setTypeface(Typeface.MONOSPACE);
         LinearLayout.LayoutParams secLp = new LinearLayout.LayoutParams(-1, -2);
         secLp.topMargin = dp(20);
         secLp.bottomMargin = dp(8);
-        content.addView(sec1, secLp);
+
 
         GlassCard reportCard = new GlassCard(context);
         // 最近检测状态

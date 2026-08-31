@@ -10,6 +10,7 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -17,6 +18,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import com.ce11kjw.aegis.ui.HomePage;
+import com.ce11kjw.aegis.ui.IconView;
 import com.ce11kjw.aegis.ui.KnowledgeBasePage;
 import com.ce11kjw.aegis.ui.SettingsPage;
 
@@ -31,7 +33,7 @@ public class MainActivity extends Activity {
     private KnowledgeBasePage knowledgePage;
     private SettingsPage settingsPage;
 
-    private TextView navHome, navKnowledge, navSettings;
+    private LinearLayout navHome, navKnowledge, navSettings;
     private static final int COLOR_ACTIVE = Color.parseColor("#22D3EE");
     private static final int COLOR_INACTIVE = Color.parseColor("#64748B");
 
@@ -81,9 +83,9 @@ public class MainActivity extends Activity {
         navLp.setMargins(dp(16), dp(0), dp(16), dp(16));
         root.addView(navBar, navLp);
 
-        navHome = makeNavItem("🛡️ 检测", true);
-        navKnowledge = makeNavItem("📚 知识库", false);
-        navSettings = makeNavItem("⚙️ 设置", false);
+        navHome = makeNavItem(IconView.NAV_SHIELD, "检测", true);
+        navKnowledge = makeNavItem(IconView.NAV_BOOK, "知识库", false);
+        navSettings = makeNavItem(IconView.NAV_SETTINGS, "设置", false);
         navBar.addView(navHome, new LinearLayout.LayoutParams(0, -1, 1));
         navBar.addView(navKnowledge, new LinearLayout.LayoutParams(0, -1, 1));
         navBar.addView(navSettings, new LinearLayout.LayoutParams(0, -1, 1));
@@ -101,15 +103,34 @@ public class MainActivity extends Activity {
         setContentView(root);
     }
 
-    private TextView makeNavItem(String text, boolean active) {
+    private LinearLayout navHomeV, navKnowledgeV, navSettingsV;
+    private ImageView navHomeI, navKnowledgeI, navSettingsI;
+    private TextView navHomeT, navKnowledgeT, navSettingsT;
+
+    private LinearLayout makeNavItem(int iconRes, String text, boolean active) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER);
+        item.setPadding(0, dp(6), 0, dp(6));
+        item.setBackground(roundRect(active ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        int isz = dp(20);
+        icon.setLayoutParams(new LinearLayout.LayoutParams(isz, isz));
+        icon.setColorFilter(active ? COLOR_ACTIVE : COLOR_INACTIVE);
+        item.addView(icon);
+
         TextView tv = new TextView(this);
         tv.setText(text);
         tv.setGravity(Gravity.CENTER);
-        tv.setTextSize(12);
+        tv.setTextSize(10);
         tv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         tv.setTextColor(active ? COLOR_ACTIVE : COLOR_INACTIVE);
-        tv.setBackground(roundRect(active ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
-        return tv;
+        LinearLayout.LayoutParams tvLp = new LinearLayout.LayoutParams(-2, -2);
+        tvLp.topMargin = dp(2);
+        item.addView(tv, tvLp);
+        return item;
     }
 
     private void switchPage(int index) {
@@ -117,12 +138,21 @@ public class MainActivity extends Activity {
         knowledgePage.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
         settingsPage.setVisibility(index == 2 ? View.VISIBLE : View.GONE);
 
-        navHome.setTextColor(index == 0 ? COLOR_ACTIVE : COLOR_INACTIVE);
-        navKnowledge.setTextColor(index == 1 ? COLOR_ACTIVE : COLOR_INACTIVE);
-        navSettings.setTextColor(index == 2 ? COLOR_ACTIVE : COLOR_INACTIVE);
-        navHome.setBackground(roundRect(index == 0 ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
-        navKnowledge.setBackground(roundRect(index == 1 ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
-        navSettings.setBackground(roundRect(index == 2 ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
+        setNavColor(navHome, index == 0);
+        setNavColor(navKnowledge, index == 1);
+        setNavColor(navSettings, index == 2);
+    }
+
+    private void setNavColor(LinearLayout item, boolean active) {
+        item.setBackground(roundRect(active ? Color.parseColor("#14232E") : Color.TRANSPARENT, dp(20)));
+        for (int i = 0; i < item.getChildCount(); i++) {
+            android.view.View v = item.getChildAt(i);
+            if (v instanceof ImageView) {
+                ((ImageView) v).setColorFilter(active ? COLOR_ACTIVE : COLOR_INACTIVE);
+            } else if (v instanceof TextView) {
+                ((TextView) v).setTextColor(active ? COLOR_ACTIVE : COLOR_INACTIVE);
+            }
+        }
     }
 
     /** 执行检测: 后台线程, 完成后首页原地更新 + 同步设置页 */
