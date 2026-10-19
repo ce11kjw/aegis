@@ -24,7 +24,11 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += listOf("-O2", "-fPIC")
-                arguments += listOf("-DANDROID_STL=none")
+                // 用 Gradle 算好的绝对路径传给 CMake，避免相对路径在 CI 下解析歧义
+                arguments += listOf(
+                    "-DANDROID_STL=none",
+                    "-DAEGIS_ENGINE_DIR=" + rootProject.projectDir.absolutePath + "/engine"
+                )
             }
         }
     }

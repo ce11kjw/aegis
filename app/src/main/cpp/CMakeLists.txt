@@ -1,7 +1,18 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(aegis LANGUAGES C)
 
-set(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../engine)
+# 优先使用 Gradle 传入的绝对路径（-DAEGIS_ENGINE_DIR=...）
+# 回退到相对路径（本地直接 cmake 时）
+if(DEFINED AEGIS_ENGINE_DIR)
+    set(ENGINE_DIR ${AEGIS_ENGINE_DIR})
+else()
+    set(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../engine)
+endif()
+
+message(STATUS "AEGIS_ENGINE_DIR = ${ENGINE_DIR}")
+if(NOT EXISTS "${ENGINE_DIR}/src/aegis.c")
+    message(FATAL_ERROR "engine sources not found at ${ENGINE_DIR}/src/aegis.c")
+endif()
 
 add_library(aegis SHARED
     ${ENGINE_DIR}/src/aegis.c
