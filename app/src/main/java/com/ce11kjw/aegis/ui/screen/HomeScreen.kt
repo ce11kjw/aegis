@@ -25,7 +25,9 @@ import com.ce11kjw.aegis.ui.component.CheckRow
 import com.ce11kjw.aegis.ui.component.ScoreRing
 import com.ce11kjw.aegis.ui.component.scoreColor
 import com.ce11kjw.aegis.ui.component.scoreLabel
+import androidx.compose.foundation.ExperimentalFoundationApi
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     report: CheckReport?,

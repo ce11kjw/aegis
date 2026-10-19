@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ce11kjw.aegis.ui.theme.*
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.unit.Dp
 
 /**
  * 评分环 —— 动效1

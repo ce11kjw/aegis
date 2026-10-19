@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +52,7 @@ enum class Tab(val label: String, val icon: ImageVector) {
     SETTINGS("设置", Icons.Filled.Settings)
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AegisApp() {
     var tab by remember { mutableStateOf(Tab.HOME) }

@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import com.ce11kjw.aegis.data.CheckItem
 import com.ce11kjw.aegis.data.CheckStatus
 import com.ce11kjw.aegis.ui.theme.*
+import androidx.compose.animation.animateContentSize
 
 /**
  * 检测项卡片 —— 动效2/4/5

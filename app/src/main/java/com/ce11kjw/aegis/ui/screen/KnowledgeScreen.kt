@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ce11kjw.aegis.ui.theme.StatusWarning
+import androidx.compose.animation.animateContentSize
 
 data class KnowledgeEntry(
     val title: String,
