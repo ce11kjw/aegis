@@ -45,7 +45,7 @@ int aegis_scan_maps(const char *needle) {
 }
 
 int aegis_scan_threads(const char *needle) {
-    char path[256], buf[64];
+    char path[300], buf[64];
     DIR *d = opendir("/proc/self/task");
     if (!d) return 0;
     struct dirent *e;
@@ -75,7 +75,7 @@ int aegis_scan_proc_name(const char **names, int count,
     struct dirent *e;
     while ((e = readdir(d))) {
         if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
-        char pcomm[64], ppath[128];
+        char pcomm[64], ppath[300];
         AEGIS_SNPRINTF(ppath, sizeof(ppath), "/proc/%s/comm", e->d_name);
         if (aegis_read_file(ppath, pcomm, sizeof(pcomm)) <= 0) continue;
         pcomm[strcspn(pcomm, "\n")] = 0;
@@ -140,12 +140,41 @@ const char *aegis_level_str(aegis_level_t level) {
     }
 }
 
+/**
+ * 风险评分 (0-100，越高越危险)
+ *
+ * 设计原则: 不能用"所有项直接相加"—— 155+ 项里任何 2 项 CRIT 就必然爆表，
+ *           导致所有 Root 设备永远显示 100 分，失去区分度。
+ *
+ * 采用加权递降:
+ *   - 第 1 个命中项: 全额权重
+ *   - 第 2 个: 权重 × 0.6
+ *   - 第 3 个: 权重 × 0.4
+ *   - 第 4 个起: 权重 × 0.2
+ *   同等级项只计前 3 个，避免"100 个 LOW 项"堆到高分。
+ */
 int aegis_score(const aegis_result_t *results, int count) {
-    static const int w[] = { 0, 10, 25, 50, 80 };
-    int score = 0;
-    for (int i = 0; i < count; i++)
-        if (results[i].detected)
-            score += w[results[i].level];
+    static const int w[] = { 0, 8, 20, 40, 70 };   /* INFO/LOW/MED/HIGH/CRIT */
+    static const float damp[] = { 1.0f, 0.6f, 0.4f, 0.2f };
+
+    /* 按等级统计命中数量 */
+    int hit[5] = {0};
+    for (int i = 0; i < count; i++) {
+        if (!results[i].detected) continue;
+        int lv = results[i].level;
+        if (lv < 0) lv = 0;
+        if (lv > 4) lv = 4;
+        hit[lv]++;
+    }
+
+    float total = 0.0f;
+    for (int lv = 1; lv <= 4; lv++) {
+        int n = hit[lv] > 3 ? 3 : hit[lv];
+        for (int k = 0; k < n; k++)
+            total += w[lv] * damp[k];
+    }
+
+    int score = (int)(total + 0.5f);
     return score > 100 ? 100 : score;
 }
 

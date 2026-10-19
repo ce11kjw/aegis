@@ -24,7 +24,8 @@
 #include <sys/system_properties.h>
 #define GETPROP(k, o, s) __system_property_get((k), (o))
 #else
-#define GETPROP(k, o, s) ((void)(k), (void)(o), (void)(s), 0)
+static inline int __getprop_stub(const char *k, char *o, size_t s) { (void)k; (void)o; (void)s; return 0; }
+#define GETPROP(k, o, s) __getprop_stub((k), (o), (s))
 #endif
 
 /* ============================================================
@@ -67,47 +68,87 @@ static unsigned long fnv1a(const unsigned char *p, size_t n) {
 
 /* 对比 libc.so 内存 vs 磁盘 */
 static int check_libc_integrity(aegis_result_t *r) {
+    /* 谨慎版: 只校验 libc 的**第一条可执行映射的前 8KB**，
+     * 且要求内存与磁盘的页对齐关系成立，避免误报。
+     *
+     * 误报来源（已排除）:
+     *  - ART JIT 代码段（不是 libc）
+     *  - libc 的只读段（非可执行）
+     *  - 厂商对 libc 的合法补丁（部分设备）→ 通过"仅比前 8KB"降低影响
+     */
     unsigned long start = 0, end = 0, off = 0;
     if (!find_exec_segment("/libc.so", &start, &end, &off)) {
-        /* 改找 libc.so 的路径形式 */
         if (!find_exec_segment("libc.so", &start, &end, &off)) {
             r->detected = 0;
             return 0;
         }
     }
 
-    size_t len = end - start;
-    if (len == 0 || len > 32 * 1024 * 1024) { r->detected = 0; return 0; }
+    size_t map_len = end - start;
+    if (map_len < 4096 || map_len > 32 * 1024 * 1024) { r->detected = 0; return 0; }
 
-    /* 读内存页（只读，已在映射中） */
-    unsigned long mem_hash = fnv1a((const unsigned char *)start, len > 65536 ? 65536 : len);
+    /* 只比前 8KB（2 页），足够覆盖函数入口区的 inline hook */
+    size_t check_len = map_len < 8192 ? map_len : 8192;
 
-    /* 从磁盘 libc 读同样大小的区域 */
-    FILE *df = fopen("/apex/com.android.runtime/lib64/bionic/libc.so", "rb");
-    if (!df) df = fopen("/system/lib64/libc.so", "rb");
-    if (!df) df = fopen("/system/lib/libc.so", "rb");
+    /* 内存读: 该段是 r-x 映射，可直接读 */
+    const unsigned char *mem = (const unsigned char *)(uintptr_t)start;
+    if (!mem) { r->detected = 0; return 0; }
+    unsigned long mem_hash = fnv1a(mem, check_len);
+
+    /* 磁盘读: 必须用 maps 给的文件偏移 */
+    FILE *df = NULL;
+    const char *cands[] = {
+        "/apex/com.android.runtime/lib64/bionic/libc.so",
+        "/system/lib64/libc.so",
+        "/system/lib/libc.so",
+    };
+    for (int i = 0; i < 3; i++) {
+        df = fopen(cands[i], "rb");
+        if (df) break;
+    }
     if (!df) { r->detected = 0; return 0; }
 
-    if (fseek(df, (long)off, SEEK_SET) != 0) { fclose(df); r->detected = 0; return 0; }
-    unsigned char *buf = (unsigned char *)malloc(len > 65536 ? 65536 : len);
+    if (fseek(df, (long)off, SEEK_SET) != 0) {
+        fclose(df); r->detected = 0; return 0;
+    }
+
+    unsigned char *buf = (unsigned char *)malloc(check_len);
     if (!buf) { fclose(df); r->detected = 0; return 0; }
-    size_t to_read = len > 65536 ? 65536 : len;
-    size_t got = fread(buf, 1, to_read, df);
+    size_t got = fread(buf, 1, check_len, df);
     fclose(df);
 
-    if (got != to_read) { free(buf); r->detected = 0; return 0; }
+    /* 读不到完整长度说明偏移/文件不匹配，直接放弃（不报错） */
+    if (got != check_len) {
+        free(buf);
+        r->detected = 0;
+        return 0;
+    }
 
     unsigned long disk_hash = fnv1a(buf, got);
     free(buf);
 
     if (mem_hash != disk_hash) {
-        snprintf(r->evidence, sizeof(r->evidence),
-                 "libc .text 段内存与磁盘不一致 (mem=%016lx disk=%016lx, %zu bytes) —— 疑似 inline hook",
-                 mem_hash, disk_hash, got);
-        r->detected = 1;
-        r->level = AEGIS_LEVEL_CRIT;
-        return 1;
+        /* 二次确认: 换 1KB 再比一次，排除巧合 */
+        unsigned long h1 = fnv1a(mem, 1024);
+        df = fopen("/apex/com.android.runtime/lib64/bionic/libc.so", "rb");
+        if (!df) df = fopen("/system/lib64/libc.so", "rb");
+        if (!df) { r->detected = 0; return 0; }
+        if (fseek(df, (long)off, SEEK_SET) != 0) { fclose(df); r->detected = 0; return 0; }
+        unsigned char b2[1024];
+        size_t g2 = fread(b2, 1, 1024, df);
+        fclose(df);
+        if (g2 != 1024) { r->detected = 0; return 0; }
+        unsigned long h2 = fnv1a(b2, 1024);
+        if (h1 != h2) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "libc 入口区内存/磁盘不一致 (off=0x%lx len=%zu) —— 疑似 inline hook",
+                     off, check_len);
+            r->detected = 1;
+            r->level = AEGIS_LEVEL_CRIT;
+            return 1;
+        }
     }
+
     r->detected = 0;
     return 0;
 }
@@ -132,7 +173,7 @@ static int check_frida_named_pipe(aegis_result_t *r) {
     DIR *d = opendir("/proc/self/fd");
     if (!d) { r->detected = 0; return 0; }
     struct dirent *e;
-    char target[256];
+    char target[300];
     while ((e = readdir(d))) {
         if (e->d_name[0] == '.') continue;
         snprintf(target, sizeof(target), "/proc/self/fd/%s", e->d_name);

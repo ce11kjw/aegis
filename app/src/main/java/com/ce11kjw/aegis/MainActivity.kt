@@ -58,32 +58,26 @@ fun AegisApp() {
     var tab by remember { mutableStateOf(Tab.HOME) }
     var report by remember { mutableStateOf<CheckReport?>(null) }
     var scanning by remember { mutableStateOf(true) }
+    // 每次递增触发一次扫描。用 counter 而非 boolean，避免"连续点两次重新扫描"时
+    // 第二次的 true 被第一次的 false 覆盖，导致 LaunchedEffect(scanning) 丢失触发。
+    var scanTrigger by remember { mutableStateOf(0) }
     val gson = remember { Gson() }
 
     fun rescan() {
-        scanning = true
+        if (scanning) return          // 正在扫描时忽略重复点击
+        scanTrigger += 1
     }
 
-    // 首次扫描
-    LaunchedEffect(Unit) {
+    // 唯一的扫描入口：scanTrigger 变化时执行
+    LaunchedEffect(scanTrigger) {
         scanning = true
         val json = withContext(Dispatchers.IO) {
             runCatching { AegisNative.runAll() }.getOrNull()
         }
-        delay(400)  // 让骨架屏可见，避免闪烁
+        // 首次扫描让骨架屏至少显示 400ms，避免一闪而过
+        if (scanTrigger == 0) delay(400)
         report = runCatching { gson.fromJson(json, CheckReport::class.java) }.getOrNull()
         scanning = false
-    }
-
-    // 重新扫描
-    LaunchedEffect(scanning) {
-        if (scanning && report != null) {
-            val json = withContext(Dispatchers.IO) {
-                runCatching { AegisNative.runAll() }.getOrNull()
-            }
-            report = runCatching { gson.fromJson(json, CheckReport::class.java) }.getOrNull()
-            scanning = false
-        }
     }
 
     Scaffold(

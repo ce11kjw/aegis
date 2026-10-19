@@ -38,7 +38,7 @@ static void json_escape(const char *in, char *out, size_t out_size) {
 
 /* 工具: 结果数组转 JSON 字符串 (调用方负责释放) */
 static char *results_to_json(const aegis_result_t *results, int count, int score) {
-    size_t cap = 8192 + count * 512;
+    size_t cap = 16384 + (size_t)count * 900;   /* 最坏: 每项 evidence 全控制字符 */
     char *json = (char *)malloc(cap);
     if (!json) return NULL;
     int off = 0;
@@ -46,7 +46,7 @@ static char *results_to_json(const aegis_result_t *results, int count, int score
         "{\"score\":%d,\"count\":%d,\"items\":[", score, count);
     for (int i = 0; i < count; i++) {
         const aegis_result_t *r = &results[i];
-        char esc_name[128], esc_mod[64], esc_lv[32], esc_ev[AEGIS_EVIDENCE_MAX * 3 + 16];
+        char esc_name[160], esc_mod[128], esc_lv[64], esc_ev[AEGIS_EVIDENCE_MAX * 6 + 32];
         json_escape(r->name, esc_name, sizeof(esc_name));
         json_escape(aegis_module_name(r->module), esc_mod, sizeof(esc_mod));
         json_escape(aegis_level_str(r->level), esc_lv, sizeof(esc_lv));
