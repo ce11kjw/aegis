@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.ce11kjw.aegis"
     compileSdk = 36
+    buildToolsVersion = "36.0.0"
     ndkVersion = "27.2.12479018"
 
     defaultConfig {
