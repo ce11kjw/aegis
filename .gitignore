@@ -1,15 +1,23 @@
-# 构建产物
-**/out/
-*.zip
-*.class
-*.jar
+# Gradle
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
 
-# 密钥/证书 - 绝不上传!
+# NDK / CMake
+.externalNativeBuild/
+.cxx/
+
+# 签名
 *.keystore
 *.jks
-*.key
-*.pem
 
-# 临时
-*.log
-/tmp/
+# 旧构建产物
+engine/out/
+app/out/
+releases/*.apk
+
+# 系统
+.DS_Store
+Thumbs.db
