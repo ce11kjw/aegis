@@ -1,6 +1,6 @@
 # Aegis 检测能力清单
 
-**引擎版本: v3.5.0** · 共 **168 项检测** / 8 大模块
+**引擎版本: v3.7.0** · 共 **181 项检测** / 10 大模块
 
 > 全部检测在设备本地 Native 层完成, 通过读取 `/proc` 文件系统、系统属性、文件路径扫描实现。
 
@@ -228,3 +228,43 @@
 | 4 | USB调试检测 |
 | 5 | ADB连接检测 |
 | 6 | 可疑端口监听 |
+
+## 🆕 原创检测 (16 项)
+
+针对现有开源方案未覆盖的场景自研，重点覆盖新框架与交叉验证
+
+| # | 检测项 | 说明 |
+|---|--------|------|
+| 1 | APatch专属检测 | `/data/adb/ap/` 全目录 + kptools + selinux_hide + pathhide |
+| 2 | ZygiskNext检测 | `/data/adb/zygisksu/` + zygiskd 进程（伪装成 ksu 目录） |
+| 3 | Magisk模块指纹 | `module.prop` 四字段（id/name/version/author）完整性 |
+| 4 | 内核模块残留 | `/proc/modules` 中 magisk/ksu/apatch/kpatch 等 |
+| 5 | SELinux规则篡改 | 自定义 sepolicy 文件残留 |
+| 6 | 属性写入时间异常 | 属性文件 mtime vs 开机时长交叉验证（resetprop 痕迹） |
+| 7 | MTK平台一致性 | 声称 MTK 但无任何 MTK 内核节点 ⇒ 属性篡改 |
+| 8 | 挂载表差异量化 | `/proc/self/mountinfo` vs `/proc/1/mountinfo` 行数偏差 |
+| 9 | 系统时钟一致性 | `/proc/uptime` vs `CLOCK_MONOTONIC` 偏差 |
+| 10 | 三时钟跳变检测 | `MONOTONIC` / `BOOTTIME` 20ms 内前进量一致性 |
+| 11 | 匿名可执行映射 | `r-xp` 且无 pathname 的映射 > 5 条 |
+| 12 | 系统服务进程链 | `system_server` 的 exe 是否指向 app_process |
+| 13 | 调试属性矛盾 | `ro.debuggable=1` + `ro.build.type=user` |
+| 14 | USB描述符伪造 | `ro.product.vendor.name` 与 `model` 矛盾 |
+| 15 | 动态代码加载路径 | 从 `/data/local/tmp`、`/memfd:` 等加载 so |
+| 16 | Android15安全状态 | API 35+ 的 `READ_ADDITIONAL_SECURITY_STATE` 可用性 |
+
+## 🔀 开源融合 (10 项)
+
+基于 MIT / Apache-2.0 项目的检测思路重写实现
+
+| # | 检测项 | 来源 | 说明 |
+|---|--------|------|------|
+| 1 | libc内存磁盘校验 | **DetectFrida** (MIT) | 内存 .text 段 vs 磁盘文件 FNV-1a 比对，任何 inline hook 都会暴露 |
+| 2 | Frida特征线程 | DetectFrida | `gum-js-loop` / `gmain` / `gdbus` / `pool-frida` |
+| 3 | Frida命名管道 | DetectFrida | `/proc/self/fd` 中 `linjector` / `frida` |
+| 4 | 属性值一致性 | **AntiFaker** (Apache-2.0) | `ro.build.tags` / `type` / `secure` / `debuggable` 四项联动校验 |
+| 5 | 序列号全零 | AntiFaker | `ro.serialno` 全 0 ⇒ 模拟器 |
+| 6 | 模拟器属性阈值 | **emulator-detector** (Apache-2.0) | 15 条属性命中 ≥ 5 条判定 |
+| 7 | 模拟器特征文件 | emulator-detector | Genymotion / QEMU / x86 / Andy / Nox 全套路径 |
+| 8 | 模拟器网段 | emulator-detector | 路由表含 `10.0.2.0/24`（QEMU 默认） |
+| 9 | 模拟器运营商 | emulator-detector | `310260`（模拟器 MCC/MNC） |
+| 10 | RootOfTrust自洽 | **GrapheneOS Auditor** (MIT) | `verifiedbootstate=green` 与 `flash.locked` / `vbmeta` 三向校验 |

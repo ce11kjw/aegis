@@ -158,6 +158,8 @@ int aegis_emulator_detect(const aegis_config_t *cfg, aegis_result_t *r, int max)
 int aegis_root_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
 int aegis_system_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
 int aegis_network_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
+int aegis_original_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
+int aegis_opensource_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
 
 int aegis_run_module(const aegis_config_t *cfg, aegis_module_t mod,
                      aegis_result_t *results, int max_results) {
@@ -182,6 +184,15 @@ int aegis_run_all(const aegis_config_t *cfg,
     for (int m = 0; m < AEGIS_MOD_COUNT; m++) {
         int n = aegis_run_module(cfg, (aegis_module_t)m,
                                  results + total, max_results - total);
+        total += n;
+    }
+    /* 扩展模块: 原创 + 开源融合 */
+    if (total < max_results) {
+        int n = aegis_original_detect(cfg, results + total, max_results - total);
+        total += n;
+    }
+    if (total < max_results) {
+        int n = aegis_opensource_detect(cfg, results + total, max_results - total);
         total += n;
     }
     return total;

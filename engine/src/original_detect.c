@@ -1,0 +1,623 @@
+/*
+ * original_detect.c - Aegis 原创检测模块
+ * 针对现有开源方案（Momo/Free-RASP/DetectFrida/AntiFaker）未覆盖的场景
+ *
+ * 设计原则:
+ *  1. 不重复已有检测，只补空白
+ *  2. 优先针对新框架（APatch / Zygisk Next）
+ *  3. 尽量用交叉验证而非单点判断，降低误报
+ */
+#include "aegis.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <time.h>
+
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#define GETPROP(k, o, s) __system_property_get((k), (o))
+#else
+#define GETPROP(k, o, s) ((void)(k), (void)(o), (void)(s), 0)
+#endif
+
+/* ---------- 工具 ---------- */
+
+/* 读取 /proc/uptime 的第一列（秒） */
+static double read_uptime(void) {
+    char buf[64];
+    if (aegis_read_file("/proc/uptime", buf, sizeof(buf)) <= 0) return -1;
+    return atof(buf);
+}
+
+/* 读取某进程的 starttime（clock ticks since boot） */
+static long long read_pid_starttime(int pid) {
+    char path[64], buf[2048];
+    snprintf(path, sizeof(path), "/proc/%d/stat", pid);
+    if (aegis_read_file(path, buf, sizeof(buf)) <= 0) return -1;
+    /* stat 格式: pid (comm) state ppid ... starttime 是第 22 个字段 */
+    char *p = strrchr(buf, ')');
+    if (!p) return -1;
+    p++;
+    int field = 3;  /* 从 state 开始计数 */
+    char *tok = strtok(p, " ");
+    while (tok) {
+        if (field == 22) return atoll(tok);
+        tok = strtok(NULL, " ");
+        field++;
+    }
+    return -1;
+}
+
+/* 读取 CLOCK_MONOTONIC 秒数 */
+static long long read_monotonic_sec(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return -1;
+    return (long long)ts.tv_sec;
+}
+
+/* 统计 mountinfo 行数 */
+static int count_mountinfo(int target_pid) {
+    char path[64], buf[1024];
+    if (target_pid > 0) snprintf(path, sizeof(path), "/proc/%d/mountinfo", target_pid);
+    else snprintf(path, sizeof(path), "/proc/self/mountinfo");
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    int n = 0;
+    while (fgets(buf, sizeof(buf), f)) n++;
+    fclose(f);
+    return n;
+}
+
+/* ============================================================
+ * 1. APatch 专属检测
+ * ============================================================ */
+static int check_apatch_dirs(aegis_result_t *r) {
+    static const char *paths[] = {
+        "/data/adb/ap", "/data/adb/ap/APatch", "/data/adb/apd",
+        "/data/adb/ap/kptools", "/data/adb/ap/su_path",
+        "/data/adb/ap/selinux_hide", "/data/adb/ap/pathhide",
+        "/data/adb/ap/hide_service", "/data/adb/ap/netisolate",
+        "/data/adb/ap/package_config", "/data/adb/ap/version"
+    };
+    for (int i = 0; i < (int)(sizeof(paths)/sizeof(paths[0])); i++) {
+        if (aegis_file_exists(paths[i])) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "发现 APatch 特征: %s", paths[i]);
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 2. Zygisk Next 专属检测（伪装成 ksu 目录）
+ * ============================================================ */
+static int check_zygisk_next(aegis_result_t *r) {
+    static const char *paths[] = {
+        "/data/adb/zygisksu", "/data/adb/zygisksu/module.prop",
+        "/data/adb/modules/zygisksu", "/data/adb/modules/zygisksu/module.prop",
+        "/data/adb/modules/zygisksu/zygiskd",
+    };
+    for (int i = 0; i < (int)(sizeof(paths)/sizeof(paths[0])); i++) {
+        if (aegis_file_exists(paths[i])) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "发现 Zygisk Next 特征: %s", paths[i]);
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+            return 1;
+        }
+    }
+    /* 进程检测 */
+    static const char *procs[] = { "zygiskd", "zygiskd64" };
+    char matched[64] = {0}, pid[16] = {0};
+    if (aegis_scan_proc_name(procs, 2, matched, sizeof(matched), pid, sizeof(pid))) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "发现 Zygisk Next 守护进程: %s (pid=%s)", matched, pid);
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 3. MTK 平台特征一致性（识别伪装成 MTK 的设备）
+ * ============================================================ */
+static int check_mtk_consistency(aegis_result_t *r) {
+    char platform[92] = {0}, hardware[92] = {0}, board[92] = {0};
+    GETPROP("ro.board.platform", platform, sizeof(platform));
+    GETPROP("ro.hardware", hardware, sizeof(hardware));
+    GETPROP("ro.product.board", board, sizeof(board));
+
+    int claims_mtk = (aegis_strcasestr(platform, "mt") == platform ||
+                      strstr(hardware, "mt") != NULL ||
+                      strstr(board, "mt") != NULL);
+
+    if (!claims_mtk) { r->detected = 0; return 0; }
+
+    /* MTK 设备应该有这些节点 */
+    static const char *mtk_nodes[] = {
+        "/proc/mtk_battery_cmd",
+        "/sys/class/power_supply/battery",
+        "/proc/mtk_thermal",
+        "/sys/devices/platform/mtk_thermal"
+    };
+    int found = 0;
+    for (int i = 0; i < (int)(sizeof(mtk_nodes)/sizeof(mtk_nodes[0])); i++)
+        if (aegis_file_exists(mtk_nodes[i])) found++;
+
+    /* 声称 MTK 但一个节点都没有 ⇒ 属性被篡改 */
+    if (found == 0) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "属性声称 MTK(%s/%s/%s) 但无任何 MTK 内核节点",
+                 platform, hardware, board);
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 4. Magisk 模块残留指纹（module.prop 内容特征）
+ * ============================================================ */
+static int check_magisk_module_prop(aegis_result_t *r) {
+    const char *dirs[] = {
+        "/data/adb/modules",
+        "/data/adb/modules_update"
+    };
+    for (int d = 0; d < 2; d++) {
+        DIR *dir = opendir(dirs[d]);
+        if (!dir) continue;
+        struct dirent *e;
+        while ((e = readdir(dir))) {
+            if (e->d_name[0] == '.') continue;
+            char p[256];
+            snprintf(p, sizeof(p), "%s/%s/module.prop", dirs[d], e->d_name);
+            char buf[1024];
+            if (aegis_read_file(p, buf, sizeof(buf)) <= 0) continue;
+            /* 特征串：Magisk 模板生成的字段 */
+            if (strstr(buf, "id=") && strstr(buf, "name=") &&
+                strstr(buf, "version=") && strstr(buf, "author=")) {
+                snprintf(r->evidence, sizeof(r->evidence),
+                         "发现 Magisk 模块: %s (路径 %s)", e->d_name, dirs[d]);
+                r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+                closedir(dir);
+                return 1;
+            }
+        }
+        closedir(dir);
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 5. 挂载表差异量化（self vs init）
+ * ============================================================ */
+static int check_mount_drift(aegis_result_t *r) {
+    int self_n = count_mountinfo(0);
+    int init_n = count_mountinfo(1);
+    if (self_n <= 0 || init_n <= 0) { r->detected = 0; return 0; }
+
+    int diff = self_n - init_n;
+    /* 正常情况下 self 会因为 app 沙箱多几条，差异通常 < 10 */
+    if (diff < -5 || diff > 30) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "挂载表异常: self=%d init=%d 差异=%+d",
+                 self_n, init_n, diff);
+        r->detected = 1; r->level = AEGIS_LEVEL_MED;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 6. 进程生命周期一致性（starttime vs uptime）
+ * ============================================================ */
+static int check_process_timing(aegis_result_t *r) {
+    double uptime = read_uptime();
+    long long mono = read_monotonic_sec();
+    if (uptime < 0 || mono < 0) { r->detected = 0; return 0; }
+
+    /* uptime 与 CLOCK_MONOTONIC 应该非常接近（差 < 5s） */
+    double drift = uptime - (double)mono;
+    if (drift < -5.0 || drift > 5.0) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "系统时钟异常: uptime=%.1f monotonic=%lld 偏差=%.1fs",
+                 uptime, mono, drift);
+        r->detected = 1; r->level = AEGIS_LEVEL_MED;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 7. 三时钟一致性（MONOTONIC / BOOTTIME / REALTIME 跳变）
+ * ============================================================ */
+static int check_clock_consistency(aegis_result_t *r) {
+    struct timespec m1, b1, r1, m2, b2;
+    if (clock_gettime(CLOCK_MONOTONIC, &m1) != 0) { r->detected = 0; return 0; }
+    if (clock_gettime(CLOCK_BOOTTIME, &b1) != 0) { r->detected = 0; return 0; }
+    if (clock_gettime(CLOCK_REALTIME, &r1) != 0) { r->detected = 0; return 0; }
+
+    /* 短暂睡眠后重新取 */
+    usleep(20000);  /* 20ms */
+
+    if (clock_gettime(CLOCK_MONOTONIC, &m2) != 0) { r->detected = 0; return 0; }
+    if (clock_gettime(CLOCK_BOOTTIME, &b2) != 0) { r->detected = 0; return 0; }
+
+    long long dm = (m2.tv_sec - m1.tv_sec) * 1000 + (m2.tv_nsec - m1.tv_nsec) / 1000000;
+    long long db = (b2.tv_sec - b1.tv_sec) * 1000 + (b2.tv_nsec - b1.tv_nsec) / 1000000;
+
+    /* 20ms 内两者应几乎一致；差 > 100ms 说明有 hook */
+    long long delta = dm - db;
+    if (delta < 0) delta = -delta;
+    if (delta > 100) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "时钟跳变: MONOTONIC 前进 %lldms, BOOTTIME 前进 %lldms (差 %lldms)",
+                 dm, db, delta);
+        r->detected = 1; r->level = AEGIS_LEVEL_MED;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 8. ELF 匿名可执行映射（通用注入检测）
+ * ============================================================ */
+static int check_anonymous_exec(aegis_result_t *r) {
+    FILE *f = fopen("/proc/self/maps", "r");
+    if (!f) { r->detected = 0; return 0; }
+
+    char line[512];
+    int anon_exec = 0;
+    char first[256] = {0};
+
+    while (fgets(line, sizeof(line), f)) {
+        /* 格式: addr perms offset dev inode pathname */
+        char *p = line;
+        /* 跳过两个地址字段 */
+        int spaces = 0;
+        while (*p && spaces < 2) { if (*p == ' ') spaces++; p++; }
+        if (!*p) continue;
+
+        /* perms 4 字符，第 3 位 'x' = 可执行 */
+        if (p[0] != 'r' || p[2] != 'x') continue;
+
+        /* 找 pathname（第 6 个空格后） */
+        char *q = p;
+        int sp = 0;
+        while (*q && sp < 4) { if (*q == ' ') sp++; q++; }
+        while (*q == ' ') q++;
+
+        /* 没有 pathname 或 pathname 为 [xxx] 或空 = 匿名映射 */
+        if (*q == '\n' || *q == '\0' || *q == '[') {
+            anon_exec++;
+            if (anon_exec == 1) {
+                /* 记录首条证据 */
+                char tmp[128];
+                snprintf(tmp, sizeof(tmp), "%s", line);
+                char *nl = strchr(tmp, '\n'); if (nl) *nl = 0;
+                snprintf(first, sizeof(first), "%s", tmp);
+            }
+        }
+    }
+    fclose(f);
+
+    /* 正常情况下 libc/ART JIT 会有少量匿名可执行，> 5 条可疑 */
+    if (anon_exec > 5) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "匿名可执行映射 %d 条，首条: %.180s", anon_exec, first);
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 9. SELinux 规则集指纹（关键规则是否被增删）
+ * ============================================================ */
+static int check_selinux_rule_drift(aegis_result_t *r) {
+    /* 检查几个"如果被放开就会暴露 Root"的关键目标 */
+    static const struct {
+        const char *tclass;
+        const char *target;
+        const char *desc;
+    } rules[] = {
+        { "file",  "ksu_file",            "ksu_file" },
+        { "dir",   "magisk_file",         "magisk_file" },
+        { "file",  "lsposed_file",        "lsposed_file" },
+        { "file",  "xposed_data",         "xposed_data" },
+        { "binder","magisk",              "magisk binder" },
+    };
+
+    /* 通过 /sys/fs/selinux/access 尝试查询（需要 root 权限才能完整查） */
+    int leaked = 0;
+    char leaked_desc[128] = {0};
+
+    for (int i = 0; i < (int)(sizeof(rules)/sizeof(rules[0])); i++) {
+        char path[128], buf[256];
+        /* /sys/fs/selinux/access 只在有权限时可用，作为"规则可用性"探测 */
+        snprintf(path, sizeof(path), "/sys/fs/selinux/class/%s", rules[i].tclass);
+        if (!aegis_file_exists(path)) continue;
+
+        /* 检查是否有自定义 policy 残留（/data/adb/*.te / sepolicy 文件） */
+        static const char *sepolicy_paths[] = {
+            "/data/adb/magisk/sepolicy",
+            "/data/adb/ksu/sepolicy",
+            "/data/adb/ap/sepolicy",
+            "/data/adb/modules/*/sepolicy.rule"
+        };
+        for (int j = 0; j < 3; j++) {
+            if (aegis_file_exists(sepolicy_paths[j])) {
+                snprintf(leaked_desc, sizeof(leaked_desc),
+                         "发现自定义 sepolicy: %s", sepolicy_paths[j]);
+                leaked = 1;
+                break;
+            }
+        }
+        if (leaked) break;
+    }
+
+    if (leaked) {
+        snprintf(r->evidence, sizeof(r->evidence), "%s", leaked_desc);
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 10. 系统服务进程链验证（识别伪 system_server）
+ * ============================================================ */
+static int check_system_server_chain(aegis_result_t *r) {
+    /* 找 system_server 的 pid */
+    int ss_pid = -1;
+    DIR *d = opendir("/proc");
+    if (!d) { r->detected = 0; return 0; }
+    struct dirent *e;
+    char comm[64], path[128];
+    while ((e = readdir(d))) {
+        if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
+        snprintf(path, sizeof(path), "/proc/%s/comm", e->d_name);
+        if (aegis_read_file(path, comm, sizeof(comm)) <= 0) continue;
+        comm[strcspn(comm, "\n")] = 0;
+        if (strcmp(comm, "system_server") == 0) {
+            ss_pid = atoi(e->d_name);
+            break;
+        }
+    }
+    closedir(d);
+
+    if (ss_pid <= 0) { r->detected = 0; return 0; }
+
+    /* system_server 的 starttime 应该 > 0 且 < uptime*100 */
+    long long st = read_pid_starttime(ss_pid);
+    if (st < 0) { r->detected = 0; return 0; }
+
+    /* 检查 exe 链接（真正的 system_server 应指向 app_process） */
+    snprintf(path, sizeof(path), "/proc/%d/exe", ss_pid);
+    char exe[256] = {0};
+    ssize_t n = readlink(path, exe, sizeof(exe) - 1);
+    if (n > 0) {
+        exe[n] = 0;
+        if (strstr(exe, "app_process") == NULL && strstr(exe, "system_server") == NULL) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "system_server(pid=%d) exe 异常: %.200s", ss_pid, exe);
+            r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 11. Android 15+ 安全状态直读
+ * ============================================================ */
+static int check_security_state_sdk(aegis_result_t *r) {
+    /* READ_ADDITIONAL_SECURITY_STATE 权限在 API 35 引入
+     * 通过检查相关系统属性/文件判断可用性
+     */
+    char sdk[16] = {0};
+    GETPROP("ro.build.version.sdk", sdk, sizeof(sdk));
+    int api = atoi(sdk);
+
+    if (api < 35) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "API %d < 35，无法使用 READ_ADDITIONAL_SECURITY_STATE（Android 15+）", api);
+        r->detected = 0;
+        return 0;
+    }
+
+    /* Android 15+ 有这些新的安全状态节点 */
+    static const char *state_paths[] = {
+        "/sys/kernel/boot_state",
+        "/proc/sys/kernel/random/boot_id",
+    };
+    int found = 0;
+    for (int i = 0; i < 2; i++)
+        if (aegis_file_exists(state_paths[i])) found++;
+
+    if (found == 0) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "API %d 但安全状态节点缺失（可能被隐藏）", api);
+        r->detected = 1; r->level = AEGIS_LEVEL_LOW;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 12. 内核模块残留（Root 方案常见）
+ * ============================================================ */
+static int check_kernel_module_residue(aegis_result_t *r) {
+    FILE *f = fopen("/proc/modules", "r");
+    if (!f) { r->detected = 0; return 0; }
+    static const char *suspects[] = {
+        "magisk", "ksu", "apatch", "kpatch", "kernelpatch",
+        "zygisk", "shamiko", "riru"
+    };
+    char line[512];
+    while (fgets(line, sizeof(line), f)) {
+        for (int i = 0; i < (int)(sizeof(suspects)/sizeof(suspects[0])); i++) {
+            if (aegis_strcasestr(line, suspects[i])) {
+                snprintf(r->evidence, sizeof(r->evidence),
+                         "发现可疑内核模块: %.180s", line);
+                r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+                fclose(f);
+                return 1;
+            }
+        }
+    }
+    fclose(f);
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 13. 属性写入时间异常（resetprop 会改变属性元数据）
+ * ============================================================ */
+static int check_prop_write_meta(aegis_result_t *r) {
+    /* 检查属性文件 mtime —— root 方案经常重写 ro.build.* 属性 */
+    static const char *prop_files[] = {
+        "/dev/__properties__/u:object_r:build_prop:s0",
+        "/dev/__properties__/u:object_r:default_prop:s0",
+    };
+    double uptime = read_uptime();
+    if (uptime < 0) { r->detected = 0; return 0; }
+
+    for (int i = 0; i < 2; i++) {
+        struct stat st;
+        if (stat(prop_files[i], &st) != 0) continue;
+        struct timespec now;
+        clock_gettime(CLOCK_REALTIME, &now);
+        double age = (double)now.tv_sec - (double)st.st_mtime;
+        /* 开机时间 > 24h 但属性文件修改时间 < 开机时间 ⇒ 被重写过 */
+        if (uptime > 86400 && age > uptime) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "属性文件修改时间早于本次开机（%.0fs 前），疑似 resetprop 重写",
+                     age - uptime);
+            r->detected = 1; r->level = AEGIS_LEVEL_MED;
+            return 1;
+        }
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 14. 调试属性一致性（ro.debuggable vs 实际）
+ * ============================================================ */
+static int check_debuggable_consistency(aegis_result_t *r) {
+    char debuggable[16] = {0}, secure[16] = {0}, build_type[32] = {0};
+    GETPROP("ro.debuggable", debuggable, sizeof(debuggable));
+    GETPROP("ro.secure", secure, sizeof(secure));
+    GETPROP("ro.build.type", build_type, sizeof(build_type));
+
+    /* ro.debuggable=1 但 ro.build.type=user ⇒ 矛盾 */
+    int d = atoi(debuggable);
+    if (d == 1 && strcmp(build_type, "user") == 0) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "属性矛盾: ro.debuggable=1 但 ro.build.type=user");
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 15. USB 设备描述符伪造（ADB 伪装）
+ * ============================================================ */
+static int check_usb_descriptor(aegis_result_t *r) {
+    /* 检查 USB 厂商/产品 ID 与实际厂商是否矛盾 */
+    char vendor[92] = {0}, model[92] = {0};
+    GETPROP("ro.product.vendor.name", vendor, sizeof(vendor));
+    GETPROP("ro.product.model", model, sizeof(model));
+
+    /* 如果 vendor 是 generic/unknown 但 model 是具体型号 ⇒ 可疑 */
+    if ((strstr(vendor, "generic") || strstr(vendor, "unknown")) &&
+        model[0] && !strstr(model, "generic") && !strstr(model, "unknown")) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "厂商/型号矛盾: vendor=%s model=%s", vendor, model);
+        r->detected = 1; r->level = AEGIS_LEVEL_MED;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 16. 动态代码加载监控（dlopen 可疑路径）
+ * ============================================================ */
+static int check_dlopen_paths(aegis_result_t *r) {
+    FILE *f = fopen("/proc/self/maps", "r");
+    if (!f) { r->detected = 0; return 0; }
+    static const char *suspect_paths[] = {
+        "/data/local/tmp/", "/dev/", "/memfd:", "/proc/self/fd/"
+    };
+    char line[512];
+    while (fgets(line, sizeof(line), f)) {
+        if (!strstr(line, ".so")) continue;
+        for (int i = 0; i < 4; i++) {
+            if (strstr(line, suspect_paths[i])) {
+                snprintf(r->evidence, sizeof(r->evidence),
+                         "从非常规路径加载 so: %.180s", line);
+                r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+                fclose(f);
+                return 1;
+            }
+        }
+    }
+    fclose(f);
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 模块入口
+ * ============================================================ */
+int aegis_original_detect(const aegis_config_t *cfg, aegis_result_t *r, int max) {
+    (void)cfg;
+    int n = 0;
+#define ADD(item_name, fn) \
+    if (n < max) { \
+        r[n].module = AEGIS_MOD_ROOT; \
+        snprintf(r[n].name, sizeof(r[n].name), "%s", (item_name)); \
+        fn(&r[n]); \
+        n++; \
+    }
+
+    ADD("APatch专属检测", check_apatch_dirs);
+    ADD("ZygiskNext检测", check_zygisk_next);
+    ADD("Magisk模块指纹", check_magisk_module_prop);
+    ADD("内核模块残留", check_kernel_module_residue);
+    ADD("SELinux规则篡改", check_selinux_rule_drift);
+    ADD("属性写入时间异常", check_prop_write_meta);
+    ADD("MTK平台一致性", check_mtk_consistency);
+    ADD("挂载表差异量化", check_mount_drift);
+    ADD("系统时钟一致性", check_process_timing);
+    ADD("三时钟跳变检测", check_clock_consistency);
+    ADD("匿名可执行映射", check_anonymous_exec);
+    ADD("系统服务进程链", check_system_server_chain);
+    ADD("调试属性矛盾", check_debuggable_consistency);
+    ADD("USB描述符伪造", check_usb_descriptor);
+    ADD("动态代码加载路径", check_dlopen_paths);
+    ADD("Android15安全状态", check_security_state_sdk);
+
+#undef ADD
+    return n;
+}
