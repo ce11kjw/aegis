@@ -24,46 +24,74 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install NDK & CMake
+      # GitHub Runner 自带 Android SDK，只需指定 SDK 路径，不要再重复安装
+      - name: Configure Android SDK
         run: |
-          yes | sdkmanager --install "ndk;27.2.12479018" "cmake;3.22.1" "platforms;android-36" "build-tools;36.0.0" > /dev/null
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_SDK_ROOT" || true
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          # 确认 sdkmanager 可用
+          which sdkmanager || ls "$ANDROID_SDK_ROOT/cmdline-tools"/*/bin/sdkmanager
+
+      - name: Install NDK & CMake & Platform 36
+        run: |
+          set -e
+          SDKMANAGER=$(which sdkmanager || echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager")
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER=$(ls "$ANDROID_SDK_ROOT"/cmdline-tools/*/bin/sdkmanager | head -1)
+          fi
+          echo "using: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" --install \
+            "ndk;27.2.12479018" \
+            "cmake;3.22.1" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" 2>&1 | tail -20
+          echo "--- installed ---"
+          ls "$ANDROID_SDK_ROOT/ndk" || true
+          ls "$ANDROID_SDK_ROOT/platforms" || true
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
 
-      - name: Decode keystore
-        if: env.KEYSTORE_BASE64 != ''
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > app/aegis.keystore
+      - name: Build Debug
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
 
-      - name: Build Debug & Release
-        run: |
-          gradle :app:assembleDebug --stacktrace
-          gradle :app:assembleRelease --stacktrace
+      - name: Build Release
+        run: gradle :app:assembleRelease --stacktrace --no-daemon
 
       - name: Collect artifacts
+        if: always()
         run: |
           mkdir -p out
-          find app/build/outputs/apk -name "*.apk" -exec cp {} out/ \;
-          cd out && for f in *.apk; do
+          find app/build/outputs/apk -name "*.apk" -exec cp {} out/ \; 2>/dev/null || true
+          cd out 2>/dev/null && for f in *.apk; do
             [ -f "$f" ] && sha256sum "$f" > "$f.sha256"
           done
           ls -la
 
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            app/build/**/*.log
+            app/build/**/outputs/logs/**
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: aegis-apk
           path: out/*
           retention-days: 30
+          if-no-files-found: warn
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/v')
