@@ -180,12 +180,14 @@ private fun KnowledgeCard(entry: KnowledgeEntry) {
         color = MaterialTheme.colorScheme.surface
     ) {
         Column(
-            Modifier.animateContentSize(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioLowBouncy,
-                    stiffness = Spring.StiffnessMediumLow
+            if (expanded) {
+                Modifier.animateContentSize(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
                 )
-            )
+            } else Modifier
         ) {
             Row(
                 Modifier

@@ -1,9 +1,7 @@
 package com.ce11kjw.aegis.ui.screen
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +24,9 @@ import com.ce11kjw.aegis.ui.component.ScoreRing
 import com.ce11kjw.aegis.ui.component.scoreColor
 import com.ce11kjw.aegis.ui.component.scoreLabel
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -36,6 +37,22 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
+
+    /* 入场动画只播一次：
+     * 原实现每个 item 都有 LaunchedEffect(Unit) + delay(index*30)，
+     * 列表项滑出屏幕被回收、再滑回来时会重新触发，
+     * 导致"滚回去内容又淡入一次"，且 181 项时末尾延迟高达 5.4s。
+     * 改为：整屏只保留一个 flag，扫描完成后统一触发一次。 */
+    var entrancePlayed by remember { mutableStateOf(false) }
+    LaunchedEffect(report?.count, scanning) {
+        if (report != null && !scanning && !entrancePlayed) {
+            entrancePlayed = true
+        }
+    }
+    // 重新扫描后重置，允许下一轮再播一次
+    LaunchedEffect(scanning) {
+        if (scanning) entrancePlayed = false
+    }
 
     LazyColumn(
         state = listState,
@@ -64,23 +81,19 @@ fun HomeScreen(
         }
 
         // ---------- 分组列表（动效3 吸顶 + 动效6 stagger）----------
-        report?.grouped()?.forEach { (moduleName, items) ->
+        // 缓存分组结果：grouped() 内部要做 groupBy + 两次 sortedBy，181 项时开销不小
+        val grouped = remember(report) { report?.grouped() ?: emptyList() }
+        grouped.forEach { (moduleName, items) ->
             stickyHeader(key = "header_$moduleName") {
                 SectionHeader(moduleName, items.count { it.isRisk })
             }
             itemsIndexed(items, key = { _, item -> "$moduleName-${item.name}" }) { index, item ->
-                // 动效6: stagger 入场
-                var visible by remember { mutableStateOf(false) }
-                LaunchedEffect(Unit) {
-                    kotlinx.coroutines.delay(index * 30L)
-                    visible = true
-                }
-                AnimatedVisibility(
-                    visible = visible,
-                    enter = fadeIn(tween(280)) + slideInVertically(tween(280)) { it / 5 }
-                ) {
-                    CheckRow(item = item)
-                }
+                /* 性能优化：
+                 * 1. 去掉每项的 AnimatedVisibility（滚动时反复重组）
+                 * 2. 去掉 LaunchedEffect(Unit)+delay（回收重建会重播）
+                 * 3. stagger 只在首次入场时生效，且上限 10 项（最多 300ms） */
+                val delayMs = if (entrancePlayed) 0 else (index.coerceAtMost(10) * 30L)
+                AnimatedCheckRow(item = item, delayMs = delayMs)
             }
         }
     }
@@ -251,4 +264,41 @@ private fun SkeletonRow(delayMillis: Int) {
             }
         }
     }
+}
+
+/**
+ * 带入场动画的检测项
+ *
+ * 与原实现（AnimatedVisibility + 每项 LaunchedEffect）的区别：
+ *  - 用 Animatable 直接驱动 graphicsLayer，只在动画期间重组
+ *  - 动画结束后 alpha=1 / translationY=0，与普通 CheckRow 完全一致
+ *  - delayMs=0（非首次入场）时完全跳过动画，零额外开销
+ *
+ * 修复的卡顿原因：
+ *  1. AnimatedVisibility 在 LazyColumn 中会持续占布局槽位并参与重组
+ *  2. 每项 LaunchedEffect(Unit) 在 item 被回收重建时会重新触发
+ *  3. index*30 的 delay 在 181 项时末尾高达 5.4 秒
+ */
+@Composable
+private fun AnimatedCheckRow(item: CheckItem, delayMs: Long) {
+    val alphaAnim = remember { Animatable(if (delayMs == 0L) 1f else 0f) }
+    val offsetAnim = remember { Animatable(if (delayMs == 0L) 0f else 24f) }
+
+    LaunchedEffect(delayMs) {
+        if (delayMs > 0L) kotlinx.coroutines.delay(delayMs)
+        if (alphaAnim.value < 1f || offsetAnim.value > 0f) {
+            kotlinx.coroutines.coroutineScope {
+                launch { alphaAnim.animateTo(1f, tween(220)) }
+                launch { offsetAnim.animateTo(0f, tween(220)) }
+            }
+        }
+    }
+
+    CheckRow(
+        item = item,
+        modifier = Modifier.graphicsLayer {
+            alpha = alphaAnim.value
+            translationY = offsetAnim.value
+        }
+    )
 }

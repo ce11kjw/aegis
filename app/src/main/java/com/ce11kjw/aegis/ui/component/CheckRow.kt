@@ -44,7 +44,8 @@ fun CheckRow(
         animationSpec = tween(250),
         label = "arrow"
     )
-    val statusColor = item.status.color()
+    // status 是计算属性，缓存避免每次重组重算
+    val statusColor = remember(item) { item.status.color() }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -53,12 +54,16 @@ fun CheckRow(
         tonalElevation = 0.dp
     ) {
         Column(
-            Modifier.animateContentSize(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioLowBouncy,
-                    stiffness = Spring.StiffnessMediumLow
+            /* 性能：animateContentSize 在 LazyColumn 里会持续参与测量，
+             * 未展开的项（绝大多数）完全不需要它。仅展开时启用。 */
+            if (expanded) {
+                Modifier.animateContentSize(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
                 )
-            )
+            } else Modifier
         ) {
             Row(
                 Modifier
