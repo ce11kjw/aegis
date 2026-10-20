@@ -6,6 +6,10 @@ on:
     tags: [ 'v*' ]
   workflow_dispatch:
 
+# GITHUB_TOKEN 默认只有 read 权限，创建 Release 必须显式声明 contents: write
+permissions:
+  contents: write
+
 jobs:
   build:
     # 使用 38.76 上的自建 runner（8C/16G，秒级响应）
