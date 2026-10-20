@@ -54,6 +54,10 @@ fun HomeScreen(
         if (scanning) entrancePlayed = false
     }
 
+    // 缓存分组结果：grouped() 内部 groupBy + 两次 sortedBy，181 项时开销不小。
+    // 注意必须在 Composable 上下文（LazyColumn 外），LazyListScope 内不能调 remember。
+    val grouped = remember(report) { report?.grouped() ?: emptyList() }
+
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize(),
@@ -81,8 +85,6 @@ fun HomeScreen(
         }
 
         // ---------- 分组列表（动效3 吸顶 + 动效6 stagger）----------
-        // 缓存分组结果：grouped() 内部要做 groupBy + 两次 sortedBy，181 项时开销不小
-        val grouped = remember(report) { report?.grouped() ?: emptyList() }
         grouped.forEach { (moduleName, items) ->
             stickyHeader(key = "header_$moduleName") {
                 SectionHeader(moduleName, items.count { it.isRisk })
