@@ -73,7 +73,7 @@ jobs:
           files: out/*
           generate_release_notes: true
           body: |
-            ## Aegis ${{ github.ref_name }}
+            ## AegisGuard ${{ github.ref_name }}
 
             **181 项检测 / 10 大模块**
 

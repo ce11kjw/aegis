@@ -40,6 +40,16 @@ android {
         }
     }
 
+    // 输出文件名带版本号，便于 Release 分发
+    applicationVariants.all {
+        val variant = this
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            val isRelease = variant.buildType.name == "release"
+            output.outputFileName = "Aegis-v${variant.versionName}-${variant.buildType.name}.apk"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
