@@ -84,6 +84,13 @@ int aegis_run_all(const aegis_config_t *cfg,
 int aegis_run_module(const aegis_config_t *cfg, aegis_module_t mod,
                      aegis_result_t *results, int max_results);
 
+/* ---------- 扩展模块（v3.7+）---------- */
+/* 原创检测（16+4 项） */
+int aegis_original_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
+
+/* 开源方案融合（10 项） */
+int aegis_opensource_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
+
 /* v4.2: 检测 su 是否可用（会触发 su 授权） */
 int aegis_check_root_available(void);
 
