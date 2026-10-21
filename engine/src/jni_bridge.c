@@ -4,6 +4,7 @@
  */
 #include "aegis.h"
 #include <jni.h>
+#include <android/log.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -207,7 +208,7 @@ static const JNINativeMethod methods_app[] = {
     { "runModule",  "(I)Ljava/lang/String;",  (void *)Java_com_ce11kjw_aegis_AegisNative_runModule },
     { "runModules", "([I)Ljava/lang/String;", (void *)Java_com_ce11kjw_aegis_AegisNative_runModules },
     { "checkRoot",  "()Z",                    (void *)Java_com_ce11kjw_aegis_AegisNative_checkRoot },
-    { "runAllWithProgress", "(Lcom/ce11kjw/aegis/ScanCallback;)Ljava/lang/String;",
+    { "runAllWithProgress", "(Lcom/ce11kjw/aegis/data/ScanCallback;)Ljava/lang/String;",
       (void *)Java_com_ce11kjw_aegis_AegisNative_runAllWithProgress },
 };
 
@@ -225,7 +226,18 @@ static const JNINativeMethod methods_sdk[] = {
     { "runModuleImpl",  "(I)Ljava/lang/String;", (void *)sdk_runModuleImpl },
 };
 
-/* 注册一个类的 native 方法（类不存在时静默跳过） */
+/* 注册一个类的 native 方法（类不存在时静默跳过）
+ *
+ * ⚠️ 重要：RegisterNatives 失败时**必须清掉待处理异常**，
+ * 否则 ART 会在后续 FindClass / 返回时检测到 pending exception
+ * 而直接 abort（报 "No pending exception expected"）。
+ *
+ * 这也是 v4.5.0 首发崩溃的根因之一：
+ *   签名写成 (Lcom/ce11kjw/aegis/ScanCallback;) 而非 .../data/ScanCallback;，
+ *   RegisterNatives 抛 NoSuchMethodError，
+ *   而旧代码只清 FindClass 的异常、没清 RegisterNatives 的，
+ *   导致 JNI_OnLoad 返回时 ART abort。
+ */
 static int register_for_class(JNIEnv *env, const char *class_name,
                               const JNINativeMethod *methods, int count) {
     jclass cls = (*env)->FindClass(env, class_name);
@@ -236,7 +248,16 @@ static int register_for_class(JNIEnv *env, const char *class_name,
     }
     int rc = (*env)->RegisterNatives(env, cls, methods, count);
     (*env)->DeleteLocalRef(env, cls);
-    return rc == 0 ? 1 : 0;
+
+    if (rc != 0) {
+        /* 注册失败：清异常，记录到 logcat，但**不让进程崩溃** */
+        (*env)->ExceptionClear(env);
+        __android_log_print(ANDROID_LOG_ERROR, "AegisJNI",
+                            "RegisterNatives failed for %s (%d methods)",
+                            class_name, count);
+        return 0;
+    }
+    return 1;
 }
 
 JNIEXPORT jint JNICALL
