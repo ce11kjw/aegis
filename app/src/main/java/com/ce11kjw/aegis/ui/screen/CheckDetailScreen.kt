@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ce11kjw.aegis.data.CheckItem
 import com.ce11kjw.aegis.data.CheckReport
+import com.ce11kjw.aegis.ui.component.color
 import com.ce11kjw.aegis.ui.component.scoreColor
 import com.ce11kjw.aegis.ui.component.scoreLabel
 import com.ce11kjw.aegis.ui.theme.*

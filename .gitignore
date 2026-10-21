@@ -21,3 +21,6 @@ releases/*.apk
 # 系统
 .DS_Store
 Thumbs.db
+
+# SDK 构建产物
+sdk/out/
