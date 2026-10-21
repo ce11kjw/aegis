@@ -65,12 +65,15 @@ fun AegisApp() {
     var scanTrigger by remember { mutableStateOf(0) }
     var detailItem by remember { mutableStateOf<com.ce11kjw.aegis.data.CheckItem?>(null) }
     var kbSearchQuery by remember { mutableStateOf("") }
+    // v4.6.3: "再按一次退出"
+    var backPressedOnce by remember { mutableStateOf(false) }
     // v4.6 三级导航：模块名 + 该模块的检测项
     var moduleDetail by remember {
         mutableStateOf<Pair<String, List<com.ce11kjw.aegis.data.CheckItem>>?>(null)
     }
     // 模块开关：从 SharedPreferences 读取（v4.2 持久化）
-    val appCtx = LocalContext.current.applicationContext
+    val ctx = LocalContext.current
+    val appCtx = ctx.applicationContext
     val enabledModules = remember {
         androidx.compose.runtime.mutableStateOf(
             com.ce11kjw.aegis.data.Prefs.loadModules(appCtx)
@@ -162,6 +165,43 @@ fun AegisApp() {
             )
         } else engineReport
         scanning = false
+    }
+
+    /* ── 返回键分层处理（v4.6.3）──
+     * 优先级：第3级详情 > 第2级模块 > 非首页 tab > 退出
+     * 不写这个会用系统默认行为（直接退出 App） */
+    androidx.activity.compose.BackHandler(
+        enabled = detailItem != null
+    ) {
+        detailItem = null
+    }
+    androidx.activity.compose.BackHandler(
+        enabled = detailItem == null && moduleDetail != null
+    ) {
+        moduleDetail = null
+    }
+    androidx.activity.compose.BackHandler(
+        enabled = detailItem == null && moduleDetail == null && tab != Tab.HOME
+    ) {
+        tab = Tab.HOME
+    }
+    // 首页再按返回：提示一次，2 秒内再按才退出
+    androidx.activity.compose.BackHandler(
+        enabled = detailItem == null && moduleDetail == null && tab == Tab.HOME
+    ) {
+        if (backPressedOnce) {
+            // 交给系统处理（退出）
+            (ctx as? android.app.Activity)?.finish()
+        } else {
+            backPressedOnce = true
+            android.widget.Toast.makeText(
+                ctx, "再按一次退出", android.widget.Toast.LENGTH_SHORT
+            ).show()
+            // 2 秒后重置
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                backPressedOnce = false
+            }, 2000)
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
