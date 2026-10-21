@@ -90,11 +90,39 @@ Java_com_ce11kjw_aegis_AegisNative_runModule(JNIEnv *env, jclass clazz, jint mod
     return out;
 }
 
-/* 静态注册表 */
-static const JNINativeMethod methods[] = {
-    { "runAll",   "()Ljava/lang/String;", (void *)Java_com_ce11kjw_aegis_AegisNative_runAll },
+/* ---------- App 用（AegisNative）---------- */
+static const JNINativeMethod methods_app[] = {
+    { "runAll",    "()Ljava/lang/String;",  (void *)Java_com_ce11kjw_aegis_AegisNative_runAll },
     { "runModule", "(I)Ljava/lang/String;", (void *)Java_com_ce11kjw_aegis_AegisNative_runModule },
 };
+
+/* ---------- SDK 用（AegisGuard）---------- */
+static jstring sdk_runAll(JNIEnv *env, jclass clazz) {
+    return Java_com_ce11kjw_aegis_AegisNative_runAll(env, clazz);
+}
+
+static jstring sdk_runModuleImpl(JNIEnv *env, jclass clazz, jint module) {
+    return Java_com_ce11kjw_aegis_AegisNative_runModule(env, clazz, module);
+}
+
+static const JNINativeMethod methods_sdk[] = {
+    { "runAll",         "()Ljava/lang/String;",  (void *)sdk_runAll },
+    { "runModuleImpl",  "(I)Ljava/lang/String;", (void *)sdk_runModuleImpl },
+};
+
+/* 注册一个类的 native 方法（类不存在时静默跳过） */
+static int register_for_class(JNIEnv *env, const char *class_name,
+                              const JNINativeMethod *methods, int count) {
+    jclass cls = (*env)->FindClass(env, class_name);
+    if (!cls) {
+        /* 类未加载：清掉异常，继续尝试下一个 */
+        (*env)->ExceptionClear(env);
+        return 0;
+    }
+    int rc = (*env)->RegisterNatives(env, cls, methods, count);
+    (*env)->DeleteLocalRef(env, cls);
+    return rc == 0 ? 1 : 0;
+}
 
 JNIEXPORT jint JNICALL
 JNI_OnLoad(JavaVM *vm, void *reserved) {
@@ -102,8 +130,21 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
     JNIEnv *env = NULL;
     if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK)
         return JNI_ERR;
-    jclass cls = (*env)->FindClass(env, "com/ce11kjw/aegis/AegisNative");
-    if (!cls) return JNI_ERR;
-    (*env)->RegisterNatives(env, cls, methods, sizeof(methods)/sizeof(methods[0]));
+
+    /* App: com.ce11kjw.aegis.AegisNative */
+    int ok_app = register_for_class(env, "com/ce11kjw/aegis/AegisNative",
+                                    methods_app,
+                                    (int)(sizeof(methods_app)/sizeof(methods_app[0])));
+
+    /* SDK: com.ce11kjw.aegis.sdk.AegisGuard（集成 SDK 时才存在） */
+    register_for_class(env, "com/ce11kjw/aegis/sdk/AegisGuard",
+                       methods_sdk,
+                       (int)(sizeof(methods_sdk)/sizeof(methods_sdk[0])));
+
+    /* 至少注册成功一个才算可用 */
+    if (!ok_app) {
+        /* App 类没找到时也允许加载（纯 SDK 场景） */
+        return JNI_VERSION_1_6;
+    }
     return JNI_VERSION_1_6;
 }

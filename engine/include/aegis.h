@@ -16,7 +16,7 @@ extern "C" {
 /* ---------- 基础常量 ---------- */
 #define AEGIS_MODULE_NAME_MAX   32
 #define AEGIS_EVIDENCE_MAX      256
-#define AEGIS_MAX_RESULTS       256
+#define AEGIS_MAX_RESULTS       384
 
 /* 风险等级 */
 typedef enum {
@@ -37,7 +37,10 @@ typedef enum {
     AEGIS_MOD_ROOT = 5,     /* Root / KernelSU / Magisk */
     AEGIS_MOD_SYSTEM = 6,   /* 系统环境 */
     AEGIS_MOD_NETWORK = 7,  /* 网络环境 */
-    AEGIS_MOD_COUNT = 8
+    AEGIS_MOD_DEVICE = 8,       /* 设备伪造检测 (v4.0) */
+    AEGIS_MOD_APPINTEGRITY = 9, /* 应用完整性 (v4.0) */
+    AEGIS_MOD_RUNTIME = 10,     /* 运行时行为 (v4.0) */
+    AEGIS_MOD_COUNT = 11
 } aegis_module_t;
 
 /* 单项检测结果 */
@@ -59,6 +62,9 @@ typedef struct {
     int enable_root;
     int enable_system;
     int enable_network;
+    int enable_device;
+    int enable_appintegrity;
+    int enable_runtime;
     int verbose;            /* 详细模式: 返回更多证据 */
 } aegis_config_t;
 

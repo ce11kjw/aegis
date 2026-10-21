@@ -27,6 +27,9 @@ add_library(aegis SHARED
     ${ENGINE_DIR}/src/network.c
     ${ENGINE_DIR}/src/original_detect.c
     ${ENGINE_DIR}/src/opensource_detect.c
+    ${ENGINE_DIR}/src/device_detect.c
+    ${ENGINE_DIR}/src/app_integrity.c
+    ${ENGINE_DIR}/src/runtime_detect.c
     ${ENGINE_DIR}/src/jni_bridge.c
 )
 

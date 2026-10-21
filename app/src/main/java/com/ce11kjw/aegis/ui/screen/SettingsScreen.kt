@@ -20,9 +20,14 @@ import com.ce11kjw.aegis.BuildConfig
 import com.ce11kjw.aegis.data.MODULES
 import com.ce11kjw.aegis.ui.theme.StatusClean
 import com.ce11kjw.aegis.ui.theme.StatusWarning
+import com.ce11kjw.aegis.data.CheckReport
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.Share
 
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier) {
+fun SettingsScreen(report: CheckReport? = null, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
@@ -70,6 +75,50 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // ---------- 报告导出 ----------
+        item { SectionLabel("报告导出") }
+        item {
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface) {
+                Column {
+                    ExportRow(
+                        title = "导出为 TXT",
+                        subtitle = "纯文本，适合阅读与分享",
+                        enabled = report != null,
+                        onClick = {
+                            report?.let {
+                                val f = com.ce11kjw.aegis.data.ReportExporter.exportTxt(ctx, it)
+                                com.ce11kjw.aegis.data.ReportExporter.share(ctx, f)
+                            }
+                        }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    ExportRow(
+                        title = "导出为 JSON",
+                        subtitle = "结构化数据，供程序处理",
+                        enabled = report != null,
+                        onClick = {
+                            report?.let {
+                                val f = com.ce11kjw.aegis.data.ReportExporter.exportJson(ctx, it)
+                                com.ce11kjw.aegis.data.ReportExporter.share(ctx, f)
+                            }
+                        }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    ExportRow(
+                        title = "导出为 HTML",
+                        subtitle = "带样式，适合截图分享",
+                        enabled = report != null,
+                        onClick = {
+                            report?.let {
+                                val f = com.ce11kjw.aegis.data.ReportExporter.exportHtml(ctx, it)
+                                com.ce11kjw.aegis.data.ReportExporter.share(ctx, f)
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -143,5 +192,50 @@ private fun InfoRow(label: String, value: String) {
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun ExportRow(
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Share,
+            contentDescription = null,
+            tint = if (enabled) MaterialTheme.colorScheme.primary
+                   else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                fontSize = 15.sp,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            )
+            Text(
+                subtitle,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (!enabled) {
+            Text(
+                "需先检测",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }

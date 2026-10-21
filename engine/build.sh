@@ -16,13 +16,16 @@ build_arch() {
         src/aegis.c src/sha256.c src/debug_detect.c src/frida_detect.c \
         src/xposed_detect.c src/integrity.c src/emulator.c src/root_detect.c \
         src/system_detect.c src/network.c src/jni_bridge.c \
-        src/original_detect.c src/opensource_detect.c -llog
+        src/original_detect.c src/opensource_detect.c \
+        src/device_detect.c src/app_integrity.c src/runtime_detect.c \
+        src/device_detect.c src/app_integrity.c src/runtime_detect.c -llog
     # 编译本架构可执行测试程序
     $CC -O2 -I include -o out/aegis_test_${arch} \
         test/test_engine.c src/aegis.c src/sha256.c src/debug_detect.c \
         src/frida_detect.c src/xposed_detect.c src/integrity.c \
         src/emulator.c src/root_detect.c src/system_detect.c src/network.c \
-        src/original_detect.c src/opensource_detect.c
+        src/original_detect.c src/opensource_detect.c \
+        src/device_detect.c src/app_integrity.c src/runtime_detect.c
     echo ">>> $arch OK: out/lib/$arch/libaegis.so"
 }
 

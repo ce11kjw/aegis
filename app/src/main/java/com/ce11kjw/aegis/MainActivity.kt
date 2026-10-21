@@ -161,7 +161,7 @@ fun AegisApp() {
                         onRescan = { rescan() }
                     )
                     Tab.KNOWLEDGE -> KnowledgeScreen()
-                    Tab.SETTINGS -> SettingsScreen()
+                    Tab.SETTINGS -> SettingsScreen(report = report)
                 }
             }
         }

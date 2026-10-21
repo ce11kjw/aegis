@@ -111,6 +111,9 @@ aegis_config_t aegis_default_config(void) {
     c.enable_root = 1;
     c.enable_system = 1;
     c.enable_network = 1;
+    c.enable_device = 1;
+    c.enable_appintegrity = 1;
+    c.enable_runtime = 1;
     c.verbose = 1;
     return c;
 }
@@ -125,6 +128,9 @@ const char *aegis_module_name(aegis_module_t mod) {
         case AEGIS_MOD_ROOT:      return "Root";
         case AEGIS_MOD_SYSTEM:    return "系统环境";
         case AEGIS_MOD_NETWORK:   return "网络环境";
+        case AEGIS_MOD_DEVICE:       return "设备伪造";
+        case AEGIS_MOD_APPINTEGRITY: return "应用完整性";
+        case AEGIS_MOD_RUNTIME:      return "运行时行为";
         default:                  return "未知";
     }
 }
@@ -238,6 +244,29 @@ int aegis_score(const aegis_result_t *results, int count) {
     else if (emu_hits >= 3) { if (score < 70) score = 70; }
     else if (emu_hits >= 1) { score += 15; }
 
+    /* L2.8: v4.0 新模块——设备伪造/应用篡改/运行时异常都是高危 */
+    {
+        int dev_hits = 0, app_hits = 0, rt_hits = 0;
+        for (int i = 0; i < count; i++) {
+            const aegis_result_t *x = &results[i];
+            if (!x->detected) continue;
+            if (x->module == AEGIS_MOD_DEVICE)            dev_hits++;
+            else if (x->module == AEGIS_MOD_APPINTEGRITY) app_hits++;
+            else if (x->module == AEGIS_MOD_RUNTIME)      rt_hits++;
+        }
+        /* 设备伪造 >=3 项 => 至少 65 分 */
+        if (dev_hits >= 5)      { if (score < 80) score = 80; }
+        else if (dev_hits >= 3) { if (score < 65) score = 65; }
+        else if (dev_hits >= 1) { score += dev_hits * 8; }
+        /* 应用被篡改 >=2 项 => 至少 70 分 */
+        if (app_hits >= 2)      { if (score < 70) score = 70; }
+        else if (app_hits >= 1) { score += 12; }
+        /* 运行时异常 >=2 项 => 至少 55 分 */
+        if (rt_hits >= 3)       { if (score < 65) score = 65; }
+        else if (rt_hits >= 2)  { if (score < 55) score = 55; }
+        else if (rt_hits >= 1)  { score += 10; }
+    }
+
     /* L3: Hook / 注入框架 */
     if (has_frida)  score += 10;
     if (has_xposed) score += 8;
@@ -268,6 +297,9 @@ int aegis_system_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
 int aegis_network_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
 int aegis_original_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
 int aegis_opensource_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
+int aegis_device_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
+int aegis_appintegrity_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
+int aegis_runtime_detect(const aegis_config_t *cfg, aegis_result_t *r, int max);
 
 int aegis_run_module(const aegis_config_t *cfg, aegis_module_t mod,
                      aegis_result_t *results, int max_results) {
@@ -281,6 +313,9 @@ int aegis_run_module(const aegis_config_t *cfg, aegis_module_t mod,
         case AEGIS_MOD_ROOT:      return aegis_root_detect(cfg, results, max_results);
         case AEGIS_MOD_SYSTEM:    return aegis_system_detect(cfg, results, max_results);
         case AEGIS_MOD_NETWORK:   return aegis_network_detect(cfg, results, max_results);
+        case AEGIS_MOD_DEVICE:       return aegis_device_detect(cfg, results, max_results);
+        case AEGIS_MOD_APPINTEGRITY: return aegis_appintegrity_detect(cfg, results, max_results);
+        case AEGIS_MOD_RUNTIME:      return aegis_runtime_detect(cfg, results, max_results);
         default: return 0;
     }
 }
