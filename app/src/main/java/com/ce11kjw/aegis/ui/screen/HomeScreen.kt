@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import com.ce11kjw.aegis.data.CheckItem
 import com.ce11kjw.aegis.data.CheckReport
 import com.ce11kjw.aegis.ui.component.CheckRow
+import com.ce11kjw.aegis.ui.component.ScanProgress
 import com.ce11kjw.aegis.ui.component.ScoreRing
 import com.ce11kjw.aegis.ui.component.scoreColor
 import com.ce11kjw.aegis.ui.component.scoreLabel
@@ -35,6 +36,10 @@ fun HomeScreen(
     scanning: Boolean,
     onRescan: () -> Unit,
     onItemClick: (CheckItem) -> Unit = {},
+    scanModule: String = "",
+    scanDone: Int = 0,
+    scanTotal: Int = 0,
+    scanFinished: List<String> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -77,9 +82,18 @@ fun HomeScreen(
             }
         }
 
-        // ---------- 骨架屏（动效7）----------
+        // ---------- 扫描进度 + 骨架屏（v4.5）----------
         if (scanning) {
-            items(6, key = { "skeleton_$it" }) {
+            item(key = "scan_progress") {
+                ScanProgress(
+                    currentModule = scanModule,
+                    done = scanDone,
+                    total = scanTotal,
+                    finishedModules = scanFinished,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+            items(4, key = { "skeleton_$it" }) {
                 SkeletonRow(delayMillis = it * 80)
             }
             return@LazyColumn

@@ -77,6 +77,72 @@ Java_com_ce11kjw_aegis_AegisNative_runAll(JNIEnv *env, jclass clazz) {
 }
 
 
+
+/* ============================================================
+ * v4.5: 带进度的全量扫描
+ *
+ * 逐个模块运行并通过回调通知 Java 层进度。
+ * 用于 UI 的扫描过程可视化（模块名 + 进度百分比）。
+ * ============================================================ */
+JNIEXPORT jstring JNICALL
+Java_com_ce11kjw_aegis_AegisNative_runAllWithProgress(
+        JNIEnv *env, jclass clazz, jobject callback) {
+    aegis_init();
+    aegis_config_t cfg = aegis_default_config();
+    aegis_result_t results[AEGIS_MAX_RESULTS];
+    int total = 0;
+
+    /* 获取回调方法 ID：void onProgress(String module, int index, int total) */
+    jmethodID onProgress = NULL;
+    if (callback) {
+        jclass cbClass = (*env)->GetObjectClass(env, callback);
+        if (cbClass) {
+            onProgress = (*env)->GetMethodID(env, cbClass, "onProgress",
+                                             "(Ljava/lang/String;II)V");
+            if (!onProgress) (*env)->ExceptionClear(env);
+        }
+    }
+
+    /* 模块总数 = 11（含扩展的原创/开源/设备/应用/运行时） */
+    int mod_total = AEGIS_MOD_COUNT + 5;   /* 8 基础 + 3 新模块 + 原创 + 开源 */
+    int mod_index = 0;
+
+#define NOTIFY(name) do { \
+    if (onProgress && callback) { \
+        jstring js = (*env)->NewStringUTF(env, (name)); \
+        (*env)->CallVoidMethod(env, callback, onProgress, js, mod_index, mod_total); \
+        (*env)->DeleteLocalRef(env, js); \
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env); \
+    } \
+    mod_index++; \
+} while(0)
+
+    /* 基础 8 模块 */
+    for (int m = 0; m < AEGIS_MOD_COUNT && total < AEGIS_MAX_RESULTS; m++) {
+        NOTIFY(aegis_module_name((aegis_module_t)m));
+        int n = aegis_run_module(&cfg, (aegis_module_t)m,
+                                 results + total, AEGIS_MAX_RESULTS - total);
+        total += n;
+    }
+
+    /* 扩展 5 个（原创/开源 分两批，设备/应用/运行时已在 AEGIS_MOD_COUNT 内） */
+    if (total < AEGIS_MAX_RESULTS) {
+        NOTIFY("原创检测");
+        total += aegis_original_detect(&cfg, results + total, AEGIS_MAX_RESULTS - total);
+    }
+    if (total < AEGIS_MAX_RESULTS) {
+        NOTIFY("开源融合");
+        total += aegis_opensource_detect(&cfg, results + total, AEGIS_MAX_RESULTS - total);
+    }
+#undef NOTIFY
+
+    int score = aegis_score(results, total);
+    char *json = results_to_json(results, total, score);
+    jstring out = json ? (*env)->NewStringUTF(env, json) : NULL;
+    free(json);
+    return out;
+}
+
 /* v4.2: 检测 su 是否可用（会触发授权弹窗） */
 JNIEXPORT jboolean JNICALL
 Java_com_ce11kjw_aegis_AegisNative_checkRoot(JNIEnv *env, jclass clazz) {
@@ -141,6 +207,8 @@ static const JNINativeMethod methods_app[] = {
     { "runModule",  "(I)Ljava/lang/String;",  (void *)Java_com_ce11kjw_aegis_AegisNative_runModule },
     { "runModules", "([I)Ljava/lang/String;", (void *)Java_com_ce11kjw_aegis_AegisNative_runModules },
     { "checkRoot",  "()Z",                    (void *)Java_com_ce11kjw_aegis_AegisNative_checkRoot },
+    { "runAllWithProgress", "(Lcom/ce11kjw/aegis/ScanCallback;)Ljava/lang/String;",
+      (void *)Java_com_ce11kjw_aegis_AegisNative_runAllWithProgress },
 };
 
 /* ---------- SDK 用（AegisGuard）---------- */

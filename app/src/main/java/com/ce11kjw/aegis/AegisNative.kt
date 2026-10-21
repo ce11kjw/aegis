@@ -18,4 +18,7 @@ object AegisNative {
 
     /** v4.2: 检测 su 是否可用（会触发 root 授权弹窗） */
     external fun checkRoot(): Boolean
+
+    /** v4.5: 带进度回调的全量扫描 */
+    external fun runAllWithProgress(callback: com.ce11kjw.aegis.data.ScanCallback?): String?
 }

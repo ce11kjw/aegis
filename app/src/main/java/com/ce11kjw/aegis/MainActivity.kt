@@ -74,6 +74,11 @@ fun AegisApp() {
     // v4.2: 深度检测开关
     var deepMode by remember { mutableStateOf(false) }
     var rootAvailable by remember { mutableStateOf<Boolean?>(null) }
+    // v4.5: 扫描进度
+    var scanModule by remember { mutableStateOf("") }
+    var scanDone by remember { mutableStateOf(0) }
+    var scanTotal by remember { mutableStateOf(0) }
+    val scanFinished = remember { mutableStateListOf<String>() }
     val gson = remember { Gson() }
 
     fun rescan() {
@@ -94,11 +99,28 @@ fun AegisApp() {
     LaunchedEffect(scanTrigger, enabledModules.value) {
         scanning = true
         val mods = enabledModules.value
+        // 重置进度
+        scanModule = ""
+        scanDone = 0
+        scanTotal = 0
+        scanFinished.clear()
+
         val json = withContext(Dispatchers.IO) {
             runCatching {
                 if (mods.size == com.ce11kjw.aegis.data.MODULES.size) {
-                    // 全开：走 runAll（含扩展模块，最快）
-                    AegisNative.runAll()
+                    // 全开：带进度回调的全量扫描（v4.5）
+                    // JNI 线程回调 → 用 Handler 投递到主线程（不用 runBlocking，避免死锁）
+                    val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+                    AegisNative.runAllWithProgress(object : com.ce11kjw.aegis.data.ScanCallback {
+                        override fun onProgress(module: String, index: Int, total: Int) {
+                            mainHandler.post {
+                                scanModule = module
+                                scanDone = index + 1
+                                scanTotal = total
+                                scanFinished.add(module)
+                            }
+                        }
+                    })
                 } else {
                     // 部分开启：逐模块跑再合并
                     AegisNative.runModules(mods.sorted().toIntArray())
@@ -191,7 +213,11 @@ fun AegisApp() {
                         report = report,
                         scanning = scanning,
                         onRescan = { rescan() },
-                        onItemClick = { detailItem = it }
+                        onItemClick = { detailItem = it },
+                        scanModule = scanModule,
+                        scanDone = scanDone,
+                        scanTotal = scanTotal,
+                        scanFinished = scanFinished.toList()
                     )
                     Tab.KNOWLEDGE -> KnowledgeScreen()
                     Tab.SETTINGS -> SettingsScreen(
