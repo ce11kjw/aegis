@@ -65,6 +65,10 @@ fun AegisApp() {
     var scanTrigger by remember { mutableStateOf(0) }
     var detailItem by remember { mutableStateOf<com.ce11kjw.aegis.data.CheckItem?>(null) }
     var kbSearchQuery by remember { mutableStateOf("") }
+    // v4.6 三级导航：模块名 + 该模块的检测项
+    var moduleDetail by remember {
+        mutableStateOf<Pair<String, List<com.ce11kjw.aegis.data.CheckItem>>?>(null)
+    }
     // 模块开关：从 SharedPreferences 读取（v4.2 持久化）
     val appCtx = LocalContext.current.applicationContext
     val enabledModules = remember {
@@ -240,7 +244,7 @@ fun AegisApp() {
                         report = report,
                         scanning = scanning,
                         onRescan = { rescan() },
-                        onItemClick = { detailItem = it },
+                        onModuleClick = { name, items -> moduleDetail = name to items },
                         scanModule = scanModule,
                         scanDone = scanDone,
                         scanTotal = scanTotal,
@@ -268,8 +272,30 @@ fun AegisApp() {
         }
     }
 
-    // 详情页覆盖层（带动画）
-    // 必须铺满 + 不透明背景，否则主界面会透过显示
+    // ── 第2级：模块详情覆盖层 ──
+    AnimatedVisibility(
+        visible = moduleDetail != null,
+        enter = fadeIn(tween(200)) + slideInHorizontally(tween(260)) { it / 8 },
+        exit = fadeOut(tween(150)),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        moduleDetail?.let { (name, items) ->
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+            ) {
+                com.ce11kjw.aegis.ui.screen.ModuleDetailScreen(
+                    moduleName = name,
+                    items = items,
+                    onBack = { moduleDetail = null },
+                    onItemClick = { detailItem = it }
+                )
+            }
+        }
+    }
+
+    // ── 第3级：检测项详情覆盖层 ──
     AnimatedVisibility(
         visible = detailItem != null,
         enter = fadeIn(tween(200)) + slideInHorizontally(tween(260)) { it / 8 },
@@ -290,6 +316,7 @@ fun AegisApp() {
                         kbSearchQuery = kbTitle
                         tab = Tab.KNOWLEDGE
                         detailItem = null
+                        moduleDetail = null
                     }
                 )
             }

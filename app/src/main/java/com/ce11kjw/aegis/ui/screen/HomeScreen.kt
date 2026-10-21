@@ -35,7 +35,7 @@ fun HomeScreen(
     report: CheckReport?,
     scanning: Boolean,
     onRescan: () -> Unit,
-    onItemClick: (CheckItem) -> Unit = {},
+    onModuleClick: (String, List<CheckItem>) -> Unit = { _, _ -> },
     scanModule: String = "",
     scanDone: Int = 0,
     scanTotal: Int = 0,
@@ -99,19 +99,130 @@ fun HomeScreen(
             return@LazyColumn
         }
 
-        // ---------- 分组列表（动效3 吸顶 + 动效6 stagger）----------
-        grouped.forEach { (moduleName, items) ->
-            stickyHeader(key = "header_$moduleName") {
-                SectionHeader(moduleName, items.count { it.isRisk })
+        // ---------- 模块卡片列表（v4.6 三级导航第 1 级）----------
+        item(key = "modules_label") {
+            Text(
+                "检测模块（${grouped.size}）",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp, start = 4.dp, bottom = 2.dp)
+            )
+        }
+
+        itemsIndexed(
+            grouped,
+            key = { _, p -> "module_${p.first}" }
+        ) { index, (moduleName, items) ->
+            val hitCount = items.count { it.isRisk }
+            val maxLevel = items.filter { it.isRisk }.maxOfOrNull { it.level } ?: 0
+            val color = when {
+                maxLevel >= 3 -> com.ce11kjw.aegis.ui.theme.StatusDanger
+                maxLevel >= 2 -> com.ce11kjw.aegis.ui.theme.StatusWarning
+                maxLevel >= 1 -> com.ce11kjw.aegis.ui.theme.StatusInfo
+                else -> com.ce11kjw.aegis.ui.theme.StatusClean
             }
-            itemsIndexed(items, key = { _, item -> "$moduleName-${item.name}" }) { index, item ->
-                /* 性能优化：
-                 * 1. 去掉每项的 AnimatedVisibility（滚动时反复重组）
-                 * 2. 去掉 LaunchedEffect(Unit)+delay（回收重建会重播）
-                 * 3. stagger 只在首次入场时生效，且上限 10 项（最多 300ms） */
-                val delayMs = if (entrancePlayed) 0 else (index.coerceAtMost(10) * 30L)
-                AnimatedCheckRow(item = item, delayMs = delayMs, onClick = { onItemClick(item) })
+
+            var visible by remember { mutableStateOf(entrancePlayed) }
+            LaunchedEffect(entrancePlayed) {
+                if (!entrancePlayed) {
+                    kotlinx.coroutines.delay(index.coerceAtMost(10) * 30L)
+                    visible = true
+                }
             }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = visible,
+                enter = androidx.compose.animation.fadeIn(tween(220)) +
+                        androidx.compose.animation.slideInVertically(tween(220)) { it / 6 }
+            ) {
+                ModuleCard(
+                    name = moduleName,
+                    total = items.size,
+                    hits = hitCount,
+                    accent = color,
+                    onClick = { onModuleClick(moduleName, items) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 模块卡片（第 1 级）
+ *
+ * 显示：模块名 + 总项数 + 命中数 + 进入箭头
+ */
+@Composable
+private fun ModuleCard(
+    name: String,
+    total: Int,
+    hits: Int,
+    accent: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface,
+        onClick = onClick
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 左侧状态条
+            Box(
+                Modifier
+                    .size(width = 3.dp, height = 32.dp)
+                    .background(accent, RoundedCornerShape(2.dp))
+            )
+            Spacer(Modifier.width(14.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    name,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "$total 项检测",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // 右侧命中数
+            if (hits > 0) {
+                Box(
+                    Modifier
+                        .background(accent.copy(alpha = 0.14f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        "$hits 个问题",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = accent
+                    )
+                }
+            } else {
+                Text(
+                    "全部通过",
+                    fontSize = 11.sp,
+                    color = com.ce11kjw.aegis.ui.theme.StatusClean
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "›",
+                fontSize = 20.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -191,42 +302,6 @@ private fun StatCell(label: String, count: Int, color: androidx.compose.ui.graph
 }
 
 /** 分组吸顶标题 */
-@Composable
-private fun SectionHeader(name: String, riskCount: Int) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(top = 16.dp, bottom = 6.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = name,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (riskCount > 0) {
-                Spacer(Modifier.width(6.dp))
-                Box(
-                    Modifier
-                        .background(
-                            com.ce11kjw.aegis.ui.theme.StatusDanger.copy(alpha = 0.15f),
-                            RoundedCornerShape(4.dp)
-                        )
-                        .padding(horizontal = 5.dp, vertical = 1.dp)
-                ) {
-                    Text(
-                        text = "$riskCount",
-                        fontSize = 10.sp,
-                        color = com.ce11kjw.aegis.ui.theme.StatusDanger
-                    )
-                }
-            }
-        }
-    }
-}
-
 /** 骨架屏（动效7）*/
 @Composable
 private fun SkeletonRow(delayMillis: Int) {
@@ -296,27 +371,3 @@ private fun SkeletonRow(delayMillis: Int) {
  *  2. 每项 LaunchedEffect(Unit) 在 item 被回收重建时会重新触发
  *  3. index*30 的 delay 在 181 项时末尾高达 5.4 秒
  */
-@Composable
-private fun AnimatedCheckRow(item: CheckItem, delayMs: Long, onClick: () -> Unit) {
-    val alphaAnim = remember { Animatable(if (delayMs == 0L) 1f else 0f) }
-    val offsetAnim = remember { Animatable(if (delayMs == 0L) 0f else 24f) }
-
-    LaunchedEffect(delayMs) {
-        if (delayMs > 0L) kotlinx.coroutines.delay(delayMs)
-        if (alphaAnim.value < 1f || offsetAnim.value > 0f) {
-            kotlinx.coroutines.coroutineScope {
-                launch { alphaAnim.animateTo(1f, tween(220)) }
-                launch { offsetAnim.animateTo(0f, tween(220)) }
-            }
-        }
-    }
-
-    CheckRow(
-        item = item,
-        onClick = onClick,
-        modifier = Modifier.graphicsLayer {
-            alpha = alphaAnim.value
-            translationY = offsetAnim.value
-        }
-    )
-}
