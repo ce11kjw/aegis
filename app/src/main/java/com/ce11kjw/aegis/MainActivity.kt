@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,12 +64,16 @@ fun AegisApp() {
     // 第二次的 true 被第一次的 false 覆盖，导致 LaunchedEffect(scanning) 丢失触发。
     var scanTrigger by remember { mutableStateOf(0) }
     var detailItem by remember { mutableStateOf<com.ce11kjw.aegis.data.CheckItem?>(null) }
-    // 模块开关（默认全开）
+    // 模块开关：从 SharedPreferences 读取（v4.2 持久化）
+    val appCtx = LocalContext.current.applicationContext
     val enabledModules = remember {
         androidx.compose.runtime.mutableStateOf(
-            com.ce11kjw.aegis.data.MODULES.map { it.id }.toSet()
+            com.ce11kjw.aegis.data.Prefs.loadModules(appCtx)
         )
     }
+    // v4.2: 深度检测开关
+    var deepMode by remember { mutableStateOf(false) }
+    var rootAvailable by remember { mutableStateOf<Boolean?>(null) }
     val gson = remember { Gson() }
 
     fun rescan() {
@@ -77,6 +82,15 @@ fun AegisApp() {
     }
 
     // 唯一的扫描入口：scanTrigger 变化时执行
+    // 首次切到设置页时探测 su（会触发授权弹窗，所以延迟到用户主动查看设置）
+    LaunchedEffect(tab) {
+        if (tab == Tab.SETTINGS && rootAvailable == null) {
+            rootAvailable = withContext(Dispatchers.IO) {
+                runCatching { AegisNative.checkRoot() }.getOrDefault(false)
+            }
+        }
+    }
+
     LaunchedEffect(scanTrigger, enabledModules.value) {
         scanning = true
         val mods = enabledModules.value
@@ -184,12 +198,17 @@ fun AegisApp() {
                         report = report,
                         enabledModules = enabledModules.value,
                         onToggleModule = { id, on ->
-                            enabledModules.value = if (on) {
+                            val next = if (on) {
                                 enabledModules.value + id
                             } else {
                                 enabledModules.value - id
                             }
-                        }
+                            enabledModules.value = next
+                            com.ce11kjw.aegis.data.Prefs.saveModules(appCtx, next)
+                        },
+                        deepMode = deepMode,
+                        deepModeAvailable = rootAvailable == true,
+                        onToggleDeepMode = { deepMode = it }
                     )
                 }
             }

@@ -15,4 +15,7 @@ object AegisNative {
 
     /** 按模块集合运行（v4.1），返回 JSON */
     external fun runModules(modules: IntArray): String?
+
+    /** v4.2: 检测 su 是否可用（会触发 root 授权弹窗） */
+    external fun checkRoot(): Boolean
 }

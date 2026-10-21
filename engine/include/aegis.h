@@ -65,6 +65,7 @@ typedef struct {
     int enable_device;
     int enable_appintegrity;
     int enable_runtime;
+    int deep_mode;   /* v4.2: 尝试用 su 提权做深度检测 */
     int verbose;            /* 详细模式: 返回更多证据 */
 } aegis_config_t;
 
@@ -82,6 +83,9 @@ int aegis_run_all(const aegis_config_t *cfg,
 /* 运行单个模块 */
 int aegis_run_module(const aegis_config_t *cfg, aegis_module_t mod,
                      aegis_result_t *results, int max_results);
+
+/* v4.2: 检测 su 是否可用（会触发 su 授权） */
+int aegis_check_root_available(void);
 
 /* 计算整体风险评分 (0-100, 越高越危险) */
 int aegis_score(const aegis_result_t *results, int count);

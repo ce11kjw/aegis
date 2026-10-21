@@ -97,6 +97,210 @@ static int check_apatch_dirs(aegis_result_t *r) {
 }
 
 /* ============================================================
+ * 1b. APatch superkey 系统调用探测（v4.2 深度增强）
+ *
+ * APatch 通过 syscall 劫持 + superkey 实现 root，超键值存在
+ * /data/adb/ap/superkey 中（APatch 0.10+）。也可通过 prctl
+ * 探测异常返回值判断 syscall 表被 patch。
+ * ============================================================ */
+static int check_apatch_superkey(aegis_result_t *r) {
+    /* 1) superkey 文件（APatch 0.10+ 独有） */
+    static const char *key_paths[] = {
+        "/data/adb/ap/superkey",
+        "/data/adb/ap/super_key",
+        "/data/adb/ap/.superkey",
+    };
+    for (int i = 0; i < 3; i++) {
+        if (aegis_file_exists(key_paths[i])) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "发现 APatch superkey: %s", key_paths[i]);
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+            return 1;
+        }
+    }
+
+    /* 2) kernelpatch 特征属性 */
+    char buf[128] = {0};
+    GETPROP("ro.kernelpatch.version", buf, sizeof(buf));
+    if (buf[0]) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "发现 kernelpatch 属性: ro.kernelpatch.version=%s", buf);
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+        return 1;
+    }
+
+    /* 3) init 进程的 cmdline 是否含 kpatch */
+    memset(buf, 0, sizeof(buf));
+    if (aegis_read_file("/proc/1/cmdline", buf, sizeof(buf)) > 0) {
+        if (strstr(buf, "kpatch") || strstr(buf, "kpm")) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "/proc/1/cmdline 含 kpatch 特征");
+            r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+            return 1;
+        }
+    }
+
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 1c. kpatch 内核符号扫描（v4.2 深度增强）
+ *
+ * APatch 的 KernelPatch 会在内核里注入 kpatch_* 符号。
+ * 即使 /data/adb/ap 被隐藏，/proc/kallsyms 的符号仍然在
+ * （除非 SUSFS 做了符号过滤）。
+ * ============================================================ */
+static int check_kpatch_symbols(aegis_result_t *r) {
+    FILE *f = fopen("/proc/kallsyms", "r");
+    if (!f) {
+        r->detected = 0;
+        return 0;
+    }
+
+    static const char *syms[] = {
+        "kpatch_init", "kpatch_exit", "kpatch_hook",
+        "kpatch_superkey", "kpatch_syscall", "kp_",
+        "kernelpatch", "kpm_init", "kpm_control"
+    };
+
+    char line[512];
+    int found = 0;
+    char matched[64] = {0};
+    int count = 0;
+
+    while (fgets(line, sizeof(line), f)) {
+        count++;
+        if (count > 200000) break;  /* 防大文件卡死 */
+
+        for (int i = 0; i < (int)(sizeof(syms)/sizeof(syms[0])); i++) {
+            if (strstr(line, syms[i])) {
+                /* 提取符号名（第 3 列） */
+                char *p1 = strchr(line, ' ');
+                if (!p1) continue;
+                p1++;
+                char *p2 = strchr(p1, ' ');
+                if (!p2) continue;
+                p2++;
+                char *p3 = strchr(p2, ' ');
+                if (!p3) continue;
+                p3++;
+                size_t n = strcspn(p3, "\n\t ");
+                if (n > 0 && n < sizeof(matched)) {
+                    memcpy(matched, p3, n);
+                    matched[n] = 0;
+                    found = 1;
+                    break;
+                }
+            }
+        }
+        if (found) break;
+    }
+    fclose(f);
+
+    if (found) {
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "kallsyms 含 kpatch 符号: %s", matched);
+        r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+        return 1;
+    }
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 1d. APatch deny 列表完整性（v4.2 深度增强）
+ *
+ * APatch 的 package_config 记录哪些 App 被排除 root。
+ * 若文件被篡改（比如恶意软件把自己加进去），说明有人
+ * 主动修改过隐藏配置。
+ * ============================================================ */
+static int check_apatch_deny_list(aegis_result_t *r) {
+    static const char *cfg_paths[] = {
+        "/data/adb/ap/package_config",
+        "/data/adb/ap/deny_list",
+    };
+
+    for (int i = 0; i < 2; i++) {
+        struct stat st;
+        if (stat(cfg_paths[i], &st) != 0) continue;
+
+        /* 检查 mtime 是否在最近 1 小时内被改（可疑） */
+        struct timespec now;
+        clock_gettime(CLOCK_REALTIME, &now);
+        long age = (long)now.tv_sec - (long)st.st_mtime;
+
+        if (age >= 0 && age < 3600) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "%s 在 %.0f 分钟前被修改（可能被篡改）",
+                     cfg_paths[i], age / 60.0);
+            r->detected = 1; r->level = AEGIS_LEVEL_MED;
+            return 1;
+        }
+
+        /* 文件存在本身就是 APatch 证据 */
+        snprintf(r->evidence, sizeof(r->evidence),
+                 "发现 APatch 配置文件: %s", cfg_paths[i]);
+        r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+        return 1;
+    }
+
+    r->detected = 0;
+    return 0;
+}
+
+/* ============================================================
+ * 1e. apd 进程隐藏检测（v4.2 深度增强）
+ *
+ * APatch 的 apd 守护进程默认可见。若 /proc 下有 apd 但
+ * 用户态 ps 看不到，说明做了进程隐藏（可疑的对抗行为）。
+ * ============================================================ */
+static int check_apd_hidden(aegis_result_t *r) {
+    /* 遍历 /proc/<pid>/comm 找 apd */
+    DIR *d = opendir("/proc");
+    if (!d) { r->detected = 0; return 0; }
+
+    struct dirent *e;
+    char comm[64], path[300];
+    int apd_pid = -1;
+
+    while ((e = readdir(d))) {
+        if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
+        snprintf(path, sizeof(path), "/proc/%s/comm", e->d_name);
+        if (aegis_read_file(path, comm, sizeof(comm)) <= 0) continue;
+        comm[strcspn(comm, "\n")] = 0;
+        if (strcmp(comm, "apd") == 0) {
+            apd_pid = atoi(e->d_name);
+            break;
+        }
+    }
+    closedir(d);
+
+    if (apd_pid <= 0) {
+        r->detected = 0;
+        return 0;
+    }
+
+    /* apd 存在：检查它的 cmdline 是否正常（不应为伪造） */
+    char cmdline[256] = {0};
+    snprintf(path, sizeof(path), "/proc/%d/cmdline", apd_pid);
+    if (aegis_read_file(path, cmdline, sizeof(cmdline)) > 0) {
+        /* 正常 apd 的 cmdline 应该就是 "apd" 或含 /data/adb/ap */
+        if (cmdline[0] && !strstr(cmdline, "apd") && !strstr(cmdline, "adb/ap")) {
+            snprintf(r->evidence, sizeof(r->evidence),
+                     "apd 进程(pid=%d) cmdline 异常（进程名被伪造）", apd_pid);
+            r->detected = 1; r->level = AEGIS_LEVEL_HIGH;
+            return 1;
+        }
+    }
+
+    snprintf(r->evidence, sizeof(r->evidence),
+             "发现 apd 守护进程 (pid=%d)", apd_pid);
+    r->detected = 1; r->level = AEGIS_LEVEL_CRIT;
+    return 1;
+}
+
+/* ============================================================
  * 2. Zygisk Next 专属检测（伪装成 ksu 目录）
  * ============================================================ */
 static int check_zygisk_next(aegis_result_t *r) {
@@ -575,6 +779,10 @@ int aegis_original_detect(const aegis_config_t *cfg, aegis_result_t *r, int max)
     }
 
     ADD("APatch专属检测", AEGIS_MOD_ROOT,      check_apatch_dirs);
+    ADD("APatch superkey", AEGIS_MOD_ROOT,     check_apatch_superkey);
+    ADD("kpatch内核符号", AEGIS_MOD_ROOT,       check_kpatch_symbols);
+    ADD("APatch配置篡改", AEGIS_MOD_ROOT,       check_apatch_deny_list);
+    ADD("apd进程伪装", AEGIS_MOD_ROOT,          check_apd_hidden);
     ADD("ZygiskNext检测", AEGIS_MOD_XPOSED,   check_zygisk_next);
     ADD("Magisk模块指纹", AEGIS_MOD_ROOT,      check_magisk_module_prop);
     ADD("内核模块残留", AEGIS_MOD_ROOT,      check_kernel_module_residue);

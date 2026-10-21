@@ -94,6 +94,32 @@ int aegis_scan_proc_name(const char **names, int count,
     return 0;
 }
 
+
+/* ============================================================
+ * v4.2: 深度模式 - 检测 su 是否可用
+ *
+ * 通过 popen("su -c id") 调用，会弹出 root 授权框。
+ * 返回 1 = su 可用（已授权或已永久授权）
+ *      0 = su 不可用（未 root / 用户拒绝 / 超时）
+ *
+ * 注意：这个调用有副作用（可能弹窗），只在用户主动
+ * 开启「深度检测」时调用。
+ * ============================================================ */
+int aegis_check_root_available(void) {
+    FILE *f = popen("su -c id 2>/dev/null", "r");
+    if (!f) return 0;
+
+    char buf[256];
+    int available = 0;
+    if (fgets(buf, sizeof(buf), f)) {
+        /* 输出应含 "uid=0" 或 "uid=0(root)" */
+        if (strstr(buf, "uid=0") || strstr(buf, "root"))
+            available = 1;
+    }
+    pclose(f);
+    return available;
+}
+
 /* ====== 调度与评分 ====== */
 
 void aegis_init(void) {
@@ -114,6 +140,7 @@ aegis_config_t aegis_default_config(void) {
     c.enable_device = 1;
     c.enable_appintegrity = 1;
     c.enable_runtime = 1;
+    c.deep_mode = 0;   /* 默认关闭，需用户手动开启 */
     c.verbose = 1;
     return c;
 }

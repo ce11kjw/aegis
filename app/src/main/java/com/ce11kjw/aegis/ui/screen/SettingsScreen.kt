@@ -19,9 +19,12 @@ import androidx.compose.ui.unit.sp
 import com.ce11kjw.aegis.BuildConfig
 import com.ce11kjw.aegis.data.MODULES
 import com.ce11kjw.aegis.ui.theme.StatusClean
+import com.ce11kjw.aegis.ui.theme.StatusInfo
 import com.ce11kjw.aegis.ui.theme.StatusWarning
 import com.ce11kjw.aegis.data.CheckReport
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 
 @Composable
@@ -29,6 +32,9 @@ fun SettingsScreen(
     report: CheckReport? = null,
     enabledModules: Set<Int> = MODULES.map { it.id }.toSet(),
     onToggleModule: (Int, Boolean) -> Unit = { _, _ -> },
+    deepMode: Boolean = false,
+    deepModeAvailable: Boolean = false,
+    onToggleDeepMode: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val ctx = LocalContext.current
@@ -108,6 +114,95 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp, top = 2.dp)
             )
+        }
+
+        // ---------- 检测视角说明（v4.2）----------
+        item { SectionLabel("检测视角") }
+        item {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = StatusInfo.copy(alpha = 0.08f)
+            ) {
+                Row(Modifier.padding(16.dp)) {
+                    Icon(
+                        Icons.Filled.Info,
+                        contentDescription = null,
+                        tint = StatusInfo,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            "普通应用视角",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = StatusInfo
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "检测以本 App 的普通应用身份运行。若设备安装了 " +
+                            "Shamiko / Zygisk 隐藏方案，本 App 会看不到 su、" +
+                            "/data/adb 等真实痕迹，结果会显示为「环境安全」。\n\n" +
+                            "这属于正常现象——隐藏方案本就只对普通应用生效，" +
+                            "对 shell / root 身份不生效。\n\n" +
+                            "要看到设备真实状态，需用 root 身份运行检测" +
+                            "（当前版本暂不支持）。",
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        }
+
+        // ---------- 深度检测（v4.2）----------
+        item { SectionLabel("深度检测") }
+        item {
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.Security,
+                        contentDescription = null,
+                        tint = if (deepMode) StatusWarning else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "以 root 身份检测",
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            "能看到 Shamiko 隐藏的真实痕迹（需授予 root）",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = deepMode,
+                        onCheckedChange = onToggleDeepMode,
+                        enabled = deepModeAvailable,
+                        modifier = Modifier.height(28.dp)
+                    )
+                }
+            }
+        }
+        if (!deepModeAvailable) {
+            item {
+                Text(
+                    "未检测到可用的 su，无法开启深度检测。",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                )
+            }
         }
 
         // ---------- 报告导出 ----------

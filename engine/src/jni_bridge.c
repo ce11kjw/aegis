@@ -76,6 +76,14 @@ Java_com_ce11kjw_aegis_AegisNative_runAll(JNIEnv *env, jclass clazz) {
     return out;
 }
 
+
+/* v4.2: 检测 su 是否可用（会触发授权弹窗） */
+JNIEXPORT jboolean JNICALL
+Java_com_ce11kjw_aegis_AegisNative_checkRoot(JNIEnv *env, jclass clazz) {
+    (void)env; (void)clazz;
+    return aegis_check_root_available() ? JNI_TRUE : JNI_FALSE;
+}
+
 /* 按模块集合运行（v4.1）：传入 jintArray，只跑指定模块 */
 JNIEXPORT jstring JNICALL
 Java_com_ce11kjw_aegis_AegisNative_runModules(JNIEnv *env, jclass clazz, jintArray modules) {
@@ -132,6 +140,7 @@ static const JNINativeMethod methods_app[] = {
     { "runAll",     "()Ljava/lang/String;",   (void *)Java_com_ce11kjw_aegis_AegisNative_runAll },
     { "runModule",  "(I)Ljava/lang/String;",  (void *)Java_com_ce11kjw_aegis_AegisNative_runModule },
     { "runModules", "([I)Ljava/lang/String;", (void *)Java_com_ce11kjw_aegis_AegisNative_runModules },
+    { "checkRoot",  "()Z",                    (void *)Java_com_ce11kjw_aegis_AegisNative_checkRoot },
 };
 
 /* ---------- SDK 用（AegisGuard）---------- */
