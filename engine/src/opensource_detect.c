@@ -56,12 +56,17 @@ static int find_exec_segment(const char *libname,
     return found;
 }
 
-/* 计算一段内存的简单哈希（FNV-1a，比完整 SHA256 快很多） */
-static unsigned long fnv1a(const unsigned char *p, size_t n) {
-    unsigned long h = 1469598103934665603UL;
+/* 计算一段内存的简单哈希（FNV-1a 64-bit）
+ *
+ * 注意：必须用 uint64_t 而非 unsigned long。
+ * 在 armeabi-v7a（32 位）上 unsigned long 只有 4 字节，
+ * 会导致 64 位常量被截断（1469598103934665603 → 1939669891），
+ * 内存哈希与磁盘哈希都截断后仍碰巧相等，等于检测失效。 */
+static uint64_t fnv1a(const unsigned char *p, size_t n) {
+    uint64_t h = 1469598103934665603ULL;
     for (size_t i = 0; i < n; i++) {
         h ^= p[i];
-        h *= 1099511628211UL;
+        h *= 1099511628211ULL;
     }
     return h;
 }
@@ -93,7 +98,7 @@ static int check_libc_integrity(aegis_result_t *r) {
     /* 内存读: 该段是 r-x 映射，可直接读 */
     const unsigned char *mem = (const unsigned char *)(uintptr_t)start;
     if (!mem) { r->detected = 0; return 0; }
-    unsigned long mem_hash = fnv1a(mem, check_len);
+    uint64_t mem_hash = fnv1a(mem, check_len);
 
     /* 磁盘读: 必须用 maps 给的文件偏移 */
     FILE *df = NULL;
@@ -124,12 +129,12 @@ static int check_libc_integrity(aegis_result_t *r) {
         return 0;
     }
 
-    unsigned long disk_hash = fnv1a(buf, got);
+    uint64_t disk_hash = fnv1a(buf, got);
     free(buf);
 
     if (mem_hash != disk_hash) {
         /* 二次确认: 换 1KB 再比一次，排除巧合 */
-        unsigned long h1 = fnv1a(mem, 1024);
+        uint64_t h1 = fnv1a(mem, 1024);
         df = fopen("/apex/com.android.runtime/lib64/bionic/libc.so", "rb");
         if (!df) df = fopen("/system/lib64/libc.so", "rb");
         if (!df) { r->detected = 0; return 0; }
@@ -138,7 +143,7 @@ static int check_libc_integrity(aegis_result_t *r) {
         size_t g2 = fread(b2, 1, 1024, df);
         fclose(df);
         if (g2 != 1024) { r->detected = 0; return 0; }
-        unsigned long h2 = fnv1a(b2, 1024);
+        uint64_t h2 = fnv1a(b2, 1024);
         if (h1 != h2) {
             snprintf(r->evidence, sizeof(r->evidence),
                      "libc 入口区内存/磁盘不一致 (off=0x%lx len=%zu) —— 疑似 inline hook",

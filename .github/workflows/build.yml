@@ -47,12 +47,21 @@ jobs:
           echo "sdk.dir=/opt/android-sdk" > local.properties
           gradle :app:assembleRelease --stacktrace --no-daemon
 
+      - name: Build SDK (AAR)
+        if: success()
+        env:
+          ANDROID_SDK_ROOT: /opt/android-sdk
+        run: |
+          chmod +x sdk/build.sh
+          cd sdk && ./build.sh all
+
       - name: Collect artifacts
         if: always()
         run: |
           rm -rf out && mkdir -p out
           find app/build/outputs/apk -name "*.apk" -exec cp {} out/ \; 2>/dev/null || true
-          cd out 2>/dev/null && for f in *.apk; do
+          find sdk/out -name "*.aar" -exec cp {} out/ \; 2>/dev/null || true
+          cd out 2>/dev/null && for f in *.apk *.aar; do
             [ -f "$f" ] && sha256sum "$f" > "$f.sha256"
           done
           ls -la out/ 2>/dev/null || ls -la

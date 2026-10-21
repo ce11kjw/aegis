@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,6 +62,7 @@ fun AegisApp() {
     // 每次递增触发一次扫描。用 counter 而非 boolean，避免"连续点两次重新扫描"时
     // 第二次的 true 被第一次的 false 覆盖，导致 LaunchedEffect(scanning) 丢失触发。
     var scanTrigger by remember { mutableStateOf(0) }
+    var detailItem by remember { mutableStateOf<com.ce11kjw.aegis.data.CheckItem?>(null) }
     val gson = remember { Gson() }
 
     fun rescan() {
@@ -80,6 +82,7 @@ fun AegisApp() {
         scanning = false
     }
 
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -158,7 +161,8 @@ fun AegisApp() {
                     Tab.HOME -> HomeScreen(
                         report = report,
                         scanning = scanning,
-                        onRescan = { rescan() }
+                        onRescan = { rescan() },
+                        onItemClick = { detailItem = it }
                     )
                     Tab.KNOWLEDGE -> KnowledgeScreen()
                     Tab.SETTINGS -> SettingsScreen(report = report)
@@ -166,4 +170,28 @@ fun AegisApp() {
             }
         }
     }
+
+    // 详情页覆盖层（带动画）
+    // 必须铺满 + 不透明背景，否则主界面会透过显示
+    AnimatedVisibility(
+        visible = detailItem != null,
+        enter = fadeIn(tween(200)) + slideInHorizontally(tween(260)) { it / 8 },
+        exit = fadeOut(tween(150)),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        detailItem?.let { detail ->
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+            ) {
+                com.ce11kjw.aegis.ui.screen.CheckDetailScreen(
+                    item = detail,
+                    report = report,
+                    onBack = { detailItem = null }
+                )
+            }
+        }
+    }
+    }  // Box
 }

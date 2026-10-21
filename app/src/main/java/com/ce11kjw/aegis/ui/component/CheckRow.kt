@@ -36,7 +36,8 @@ import androidx.compose.animation.animateContentSize
 fun CheckRow(
     item: CheckItem,
     modifier: Modifier = Modifier,
-    initiallyExpanded: Boolean = false
+    initiallyExpanded: Boolean = false,
+    onClick: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(initiallyExpanded) }
     val arrowRotation by animateFloatAsState(
@@ -68,8 +69,8 @@ fun CheckRow(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = item.evidence.isNotBlank() || item.isRisk) {
-                        expanded = !expanded
+                    .clickable {
+                        if (onClick != null) onClick() else expanded = !expanded
                     }
                     .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically

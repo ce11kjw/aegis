@@ -34,6 +34,7 @@ fun HomeScreen(
     report: CheckReport?,
     scanning: Boolean,
     onRescan: () -> Unit,
+    onItemClick: (CheckItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -95,7 +96,7 @@ fun HomeScreen(
                  * 2. 去掉 LaunchedEffect(Unit)+delay（回收重建会重播）
                  * 3. stagger 只在首次入场时生效，且上限 10 项（最多 300ms） */
                 val delayMs = if (entrancePlayed) 0 else (index.coerceAtMost(10) * 30L)
-                AnimatedCheckRow(item = item, delayMs = delayMs)
+                AnimatedCheckRow(item = item, delayMs = delayMs, onClick = { onItemClick(item) })
             }
         }
     }
@@ -282,7 +283,7 @@ private fun SkeletonRow(delayMillis: Int) {
  *  3. index*30 的 delay 在 181 项时末尾高达 5.4 秒
  */
 @Composable
-private fun AnimatedCheckRow(item: CheckItem, delayMs: Long) {
+private fun AnimatedCheckRow(item: CheckItem, delayMs: Long, onClick: () -> Unit) {
     val alphaAnim = remember { Animatable(if (delayMs == 0L) 1f else 0f) }
     val offsetAnim = remember { Animatable(if (delayMs == 0L) 0f else 24f) }
 
@@ -298,6 +299,7 @@ private fun AnimatedCheckRow(item: CheckItem, delayMs: Long) {
 
     CheckRow(
         item = item,
+        onClick = onClick,
         modifier = Modifier.graphicsLayer {
             alpha = alphaAnim.value
             translationY = offsetAnim.value
