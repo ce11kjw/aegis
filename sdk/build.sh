@@ -16,7 +16,10 @@ PLATFORM=$(ls -d "$SDK"/platforms/android-* | sort -V | tail -1)/android.jar
 
 ENGINE="$REPO_ROOT/engine"
 OUT="$SCRIPT_DIR/out"
-VERSION="4.0.0"
+# 版本号从 app/build.gradle.kts 读取（单一真相源）
+# 版本号从 app/build.gradle.kts 读取（单一真相源）
+VERSION=$(sed -n 's/.*versionName *= *"\([^"]*\)".*/\1/p' "$REPO_ROOT/app/build.gradle.kts" | head -1)
+[ -z "$VERSION" ] && VERSION="0.0.0"
 
 echo "=== AegisGuard SDK $VERSION ==="
 echo "SDK:      $SDK"

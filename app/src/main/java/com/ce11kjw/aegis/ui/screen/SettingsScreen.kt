@@ -25,7 +25,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.filled.Share
 
 @Composable
-fun SettingsScreen(report: CheckReport? = null, modifier: Modifier = Modifier) {
+fun SettingsScreen(
+    report: CheckReport? = null,
+    enabledModules: Set<Int> = MODULES.map { it.id }.toSet(),
+    onToggleModule: (Int, Boolean) -> Unit = { _, _ -> },
+    modifier: Modifier = Modifier
+) {
     val ctx = LocalContext.current
 
     LazyColumn(
@@ -46,37 +51,63 @@ fun SettingsScreen(report: CheckReport? = null, modifier: Modifier = Modifier) {
         }
 
         // ---------- 模块概览 ----------
-        item { SectionLabel("检测模块") }
+        item { SectionLabel("检测模块 · 可单独开关") }
         item {
             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface) {
-                Column(Modifier.padding(vertical = 6.dp)) {
-                    MODULES.forEach { m ->
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    MODULES.forEachIndexed { index, m ->
+                        val on = m.id in enabledModules
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
                                 Modifier
-                                    .size(6.dp)
-                                    .background(StatusClean, androidx.compose.foundation.shape.CircleShape)
+                                    .size(7.dp)
+                                    .background(
+                                        if (on) StatusClean else MaterialTheme.colorScheme.outline,
+                                        androidx.compose.foundation.shape.CircleShape
+                                    )
                             )
                             Spacer(Modifier.width(12.dp))
-                            Text(
-                                m.name,
-                                fontSize = 14.sp,
-                                modifier = Modifier.width(110.dp)
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    m.name,
+                                    fontSize = 14.sp,
+                                    color = if (on) MaterialTheme.colorScheme.onSurface
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    m.desc,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = on,
+                                onCheckedChange = { onToggleModule(m.id, it) },
+                                modifier = Modifier.height(28.dp)
                             )
-                            Text(
-                                m.desc,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        if (index < MODULES.size - 1) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 35.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                             )
                         }
                     }
                 }
             }
+        }
+        item {
+            Text(
+                "关闭的模块不会参与扫描，可减少耗时。",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+            )
         }
 
         // ---------- 报告导出 ----------

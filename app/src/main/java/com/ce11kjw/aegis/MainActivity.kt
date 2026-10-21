@@ -63,6 +63,12 @@ fun AegisApp() {
     // 第二次的 true 被第一次的 false 覆盖，导致 LaunchedEffect(scanning) 丢失触发。
     var scanTrigger by remember { mutableStateOf(0) }
     var detailItem by remember { mutableStateOf<com.ce11kjw.aegis.data.CheckItem?>(null) }
+    // 模块开关（默认全开）
+    val enabledModules = remember {
+        androidx.compose.runtime.mutableStateOf(
+            com.ce11kjw.aegis.data.MODULES.map { it.id }.toSet()
+        )
+    }
     val gson = remember { Gson() }
 
     fun rescan() {
@@ -71,10 +77,19 @@ fun AegisApp() {
     }
 
     // 唯一的扫描入口：scanTrigger 变化时执行
-    LaunchedEffect(scanTrigger) {
+    LaunchedEffect(scanTrigger, enabledModules.value) {
         scanning = true
+        val mods = enabledModules.value
         val json = withContext(Dispatchers.IO) {
-            runCatching { AegisNative.runAll() }.getOrNull()
+            runCatching {
+                if (mods.size == com.ce11kjw.aegis.data.MODULES.size) {
+                    // 全开：走 runAll（含扩展模块，最快）
+                    AegisNative.runAll()
+                } else {
+                    // 部分开启：逐模块跑再合并
+                    AegisNative.runModules(mods.sorted().toIntArray())
+                }
+            }.getOrNull()
         }
         // 首次扫描让骨架屏至少显示 400ms，避免一闪而过
         if (scanTrigger == 0) delay(400)
@@ -165,7 +180,17 @@ fun AegisApp() {
                         onItemClick = { detailItem = it }
                     )
                     Tab.KNOWLEDGE -> KnowledgeScreen()
-                    Tab.SETTINGS -> SettingsScreen(report = report)
+                    Tab.SETTINGS -> SettingsScreen(
+                        report = report,
+                        enabledModules = enabledModules.value,
+                        onToggleModule = { id, on ->
+                            enabledModules.value = if (on) {
+                                enabledModules.value + id
+                            } else {
+                                enabledModules.value - id
+                            }
+                        }
+                    )
                 }
             }
         }

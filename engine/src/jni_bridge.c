@@ -76,6 +76,43 @@ Java_com_ce11kjw_aegis_AegisNative_runAll(JNIEnv *env, jclass clazz) {
     return out;
 }
 
+/* 按模块集合运行（v4.1）：传入 jintArray，只跑指定模块 */
+JNIEXPORT jstring JNICALL
+Java_com_ce11kjw_aegis_AegisNative_runModules(JNIEnv *env, jclass clazz, jintArray modules) {
+    aegis_init();
+    aegis_config_t cfg = aegis_default_config();
+    aegis_result_t results[AEGIS_MAX_RESULTS];
+    int total = 0;
+
+    jsize n = (*env)->GetArrayLength(env, modules);
+    if (n <= 0 || total >= AEGIS_MAX_RESULTS) {
+        int count = aegis_run_all(&cfg, results, AEGIS_MAX_RESULTS);
+        int score = aegis_score(results, count);
+        char *json = results_to_json(results, count, score);
+        jstring out = json ? (*env)->NewStringUTF(env, json) : NULL;
+        free(json);
+        return out;
+    }
+
+    jint *arr = (*env)->GetIntArrayElements(env, modules, NULL);
+    if (!arr) return NULL;
+
+    for (jsize i = 0; i < n && total < AEGIS_MAX_RESULTS; i++) {
+        int mod = arr[i];
+        if (mod < 0 || mod >= AEGIS_MOD_COUNT) continue;
+        int got = aegis_run_module(&cfg, (aegis_module_t)mod,
+                                   results + total, AEGIS_MAX_RESULTS - total);
+        total += got;
+    }
+    (*env)->ReleaseIntArrayElements(env, modules, arr, JNI_ABORT);
+
+    int score = aegis_score(results, total);
+    char *json = results_to_json(results, total, score);
+    jstring out = json ? (*env)->NewStringUTF(env, json) : NULL;
+    free(json);
+    return out;
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_ce11kjw_aegis_AegisNative_runModule(JNIEnv *env, jclass clazz, jint module) {
     aegis_init();
@@ -92,8 +129,9 @@ Java_com_ce11kjw_aegis_AegisNative_runModule(JNIEnv *env, jclass clazz, jint mod
 
 /* ---------- App 用（AegisNative）---------- */
 static const JNINativeMethod methods_app[] = {
-    { "runAll",    "()Ljava/lang/String;",  (void *)Java_com_ce11kjw_aegis_AegisNative_runAll },
-    { "runModule", "(I)Ljava/lang/String;", (void *)Java_com_ce11kjw_aegis_AegisNative_runModule },
+    { "runAll",     "()Ljava/lang/String;",   (void *)Java_com_ce11kjw_aegis_AegisNative_runAll },
+    { "runModule",  "(I)Ljava/lang/String;",  (void *)Java_com_ce11kjw_aegis_AegisNative_runModule },
+    { "runModules", "([I)Ljava/lang/String;", (void *)Java_com_ce11kjw_aegis_AegisNative_runModules },
 };
 
 /* ---------- SDK 用（AegisGuard）---------- */

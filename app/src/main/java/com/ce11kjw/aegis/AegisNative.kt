@@ -10,6 +10,9 @@ object AegisNative {
     /** 运行全部检测，返回 JSON */
     external fun runAll(): String?
 
-    /** 运行单个模块（0-7），返回 JSON */
+    /** 运行单个模块（0-10），返回 JSON */
     external fun runModule(module: Int): String?
+
+    /** 按模块集合运行（v4.1），返回 JSON */
+    external fun runModules(modules: IntArray): String?
 }
