@@ -60,5 +60,7 @@ val MODULES = listOf(
     ModuleMeta(7, "网络环境", "globe", "代理与证书"),
     ModuleMeta(8, "设备伪造", "smartphone", "改机与属性伪装"),
     ModuleMeta(9, "应用完整性", "shield", "包体篡改与侧载"),
-    ModuleMeta(10, "运行时行为", "activity", "UID/线程/句柄异常")
+    ModuleMeta(10, "运行时行为", "activity", "UID/线程/句柄异常"),
+    ModuleMeta(11, "应用审计", "apps", "已安装应用的来源与权限"),
+    ModuleMeta(12, "系统配置", "settings", "ADB/开发者选项/锁屏等")
 )

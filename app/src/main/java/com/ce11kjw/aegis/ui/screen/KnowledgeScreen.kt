@@ -37,8 +37,15 @@ import androidx.compose.ui.unit.sp
 import com.ce11kjw.aegis.ui.theme.*
 
 @Composable
-fun KnowledgeScreen(modifier: Modifier = Modifier) {
-    var query by remember { mutableStateOf("") }
+fun KnowledgeScreen(
+    initialQuery: String = "",
+    modifier: Modifier = Modifier
+) {
+    // 外部传入的初始搜索词变化时同步（从详情页跳过来）
+    var query by remember { mutableStateOf(initialQuery) }
+    androidx.compose.runtime.LaunchedEffect(initialQuery) {
+        if (initialQuery.isNotEmpty()) query = initialQuery
+    }
     var category by remember { mutableStateOf<String?>(null) }
 
     val categories = remember { listOf("全部") + KNOWLEDGE.map { it.category }.distinct() }

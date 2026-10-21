@@ -64,6 +64,7 @@ fun AegisApp() {
     // 第二次的 true 被第一次的 false 覆盖，导致 LaunchedEffect(scanning) 丢失触发。
     var scanTrigger by remember { mutableStateOf(0) }
     var detailItem by remember { mutableStateOf<com.ce11kjw.aegis.data.CheckItem?>(null) }
+    var kbSearchQuery by remember { mutableStateOf("") }
     // 模块开关：从 SharedPreferences 读取（v4.2 持久化）
     val appCtx = LocalContext.current.applicationContext
     val enabledModules = remember {
@@ -129,7 +130,33 @@ fun AegisApp() {
         }
         // 首次扫描让骨架屏至少显示 400ms，避免一闪而过
         if (scanTrigger == 0) delay(400)
-        report = runCatching { gson.fromJson(json, CheckReport::class.java) }.getOrNull()
+
+        val engineReport = runCatching {
+            gson.fromJson(json, CheckReport::class.java)
+        }.getOrNull()
+
+        val auditItems = withContext(Dispatchers.IO) {
+            runCatching {
+                com.ce11kjw.aegis.data.AuditBridge.run(appCtx, mods)
+            }.getOrDefault(emptyList())
+        }
+
+        report = if (engineReport != null && auditItems.isNotEmpty()) {
+            val merged = engineReport.items + auditItems
+            val auditRisk = auditItems.count { it.isRisk }
+            val bonus = when {
+                auditRisk >= 8 -> 15
+                auditRisk >= 5 -> 10
+                auditRisk >= 3 -> 6
+                auditRisk >= 1 -> 3
+                else -> 0
+            }
+            engineReport.copy(
+                score = (engineReport.score + bonus).coerceAtMost(100),
+                count = merged.size,
+                items = merged
+            )
+        } else engineReport
         scanning = false
     }
 
@@ -219,7 +246,7 @@ fun AegisApp() {
                         scanTotal = scanTotal,
                         scanFinished = scanFinished.toList()
                     )
-                    Tab.KNOWLEDGE -> KnowledgeScreen()
+                    Tab.KNOWLEDGE -> KnowledgeScreen(initialQuery = kbSearchQuery)
                     Tab.SETTINGS -> SettingsScreen(
                         report = report,
                         enabledModules = enabledModules.value,
@@ -258,7 +285,12 @@ fun AegisApp() {
                 com.ce11kjw.aegis.ui.screen.CheckDetailScreen(
                     item = detail,
                     report = report,
-                    onBack = { detailItem = null }
+                    onBack = { detailItem = null },
+                    onOpenKnowledge = { kbTitle ->
+                        kbSearchQuery = kbTitle
+                        tab = Tab.KNOWLEDGE
+                        detailItem = null
+                    }
                 )
             }
         }
