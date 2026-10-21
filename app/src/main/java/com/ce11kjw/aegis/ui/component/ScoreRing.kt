@@ -93,15 +93,27 @@ fun ScoreRing(
 }
 
 fun scoreColor(score: Int): Color = when {
-    score >= 70 -> StatusDanger
-    score >= 40 -> StatusWarning
-    score >= 15 -> StatusInfo
-    else -> StatusClean
+    score >= 70 -> StatusDanger      // 70-100 危险/严重 红
+    score >= 30 -> StatusWarning     // 30-69  可疑/存在风险 橙
+    score >= 10 -> StatusInfo        // 10-29  轻微异常 蓝
+    else -> StatusClean              // 0-9    安全 绿
 }
 
+/**
+ * 评分等级文案（与 aegis_score v2 的分段对齐）
+ *
+ *    0-9    环境安全    无任何风险信号
+ *   10-29   轻微异常    可能开了调试 / 非标准 ROM
+ *   30-49   可疑        存在部分风险特征，需人工确认
+ *   50-69   存在风险    明确的环境改动
+ *   70-89   危险        确认 Root / Hook
+ *   90-100  严重        多重 Root 框架 + 隐藏方案 + Hook
+ */
 fun scoreLabel(score: Int): String = when {
-    score >= 70 -> "环境异常"
-    score >= 40 -> "存在风险"
-    score >= 15 -> "轻微异常"
+    score >= 90 -> "严重风险"
+    score >= 70 -> "危险"
+    score >= 50 -> "存在风险"
+    score >= 30 -> "可疑"
+    score >= 10 -> "轻微异常"
     else -> "环境安全"
 }

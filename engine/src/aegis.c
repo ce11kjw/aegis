@@ -153,29 +153,108 @@ const char *aegis_level_str(aegis_level_t level) {
  *   - 第 4 个起: 权重 × 0.2
  *   同等级项只计前 3 个，避免"100 个 LOW 项"堆到高分。
  */
+/**
+ * 风险评分 v2（方案 C：分级 + 关键项加权）
+ *
+ * v1 问题：CRIT 权重 70，2 项即封顶 100，所有 Root 设备一律满分，丧失区分度。
+ *
+ * v2 分四层叠加：
+ *   L1 Root 框架基线：命中 Magisk/KSU/APatch 任一 => 60 分起
+ *                      2 个框架 +12，3 个 +10
+ *   L2 Root 证据数量：CRIT 每条 +3(上限20)、HIGH +2(上限10)、MED +1(上限5)
+ *   L3 Hook 框架：Frida +10、Xposed +8、Zygisk +6、Shamiko/DenyList +5
+ *   L4 其他模块：按命中比例折算，上限 +15（无 Root 时最高 45）
+ *
+ * 分数解读：
+ *    0-9   环境安全    10-29 轻微异常    30-49 可疑
+ *   50-69  存在风险    70-89 危险        90-100 严重
+ */
 int aegis_score(const aegis_result_t *results, int count) {
-    static const int w[] = { 0, 8, 20, 40, 70 };   /* INFO/LOW/MED/HIGH/CRIT */
-    static const float damp[] = { 1.0f, 0.6f, 0.4f, 0.2f };
+    if (!results || count <= 0) return 0;
 
-    /* 按等级统计命中数量 */
-    int hit[5] = {0};
+    int root_crit = 0, root_high = 0, root_med = 0;
+    int has_magisk = 0, has_ksu = 0, has_apatch = 0;
+    int has_xposed = 0, has_frida = 0, has_zygisk = 0, has_hide = 0;
+    int other_hits = 0, other_total = 0;
+    int emu_hits = 0, emu_total = 0;
+
     for (int i = 0; i < count; i++) {
-        if (!results[i].detected) continue;
-        int lv = results[i].level;
-        if (lv < 0) lv = 0;
-        if (lv > 4) lv = 4;
-        hit[lv]++;
+        const aegis_result_t *r = &results[i];
+        const char *n = r->name;
+
+        if (r->module == AEGIS_MOD_ROOT) {
+            if (r->detected) {
+                if (r->level >= AEGIS_LEVEL_CRIT)      root_crit++;
+                else if (r->level >= AEGIS_LEVEL_HIGH) root_high++;
+                else if (r->level >= AEGIS_LEVEL_MED)  root_med++;
+
+                if (strstr(n, "Magisk") || strstr(n, "magisk"))  has_magisk = 1;
+                if (strstr(n, "KernelSU") || strstr(n, "KSU") || strstr(n, "ksu")) has_ksu = 1;
+                if (strstr(n, "APatch"))                          has_apatch = 1;
+                if (strstr(n, "DenyList") || strstr(n, "隐藏挂载")) has_hide = 1;
+            }
+        } else if (r->module == AEGIS_MOD_XPOSED) {
+            other_total++;
+            if (r->detected) {
+                other_hits++;
+                if (strstr(n, "Shamiko") || strstr(n, "隐藏") || strstr(n, "DenyList"))
+                    has_hide = 1;
+                else if (strstr(n, "Zygisk"))
+                    has_zygisk = 1;
+                else
+                    has_xposed = 1;
+            }
+        } else if (r->module == AEGIS_MOD_FRIDA) {
+            other_total++;
+            if (r->detected) { other_hits++; has_frida = 1; }
+        } else if (r->module == AEGIS_MOD_EMULATOR) {
+            other_total++; emu_total++;
+            if (r->detected) { other_hits++; emu_hits++; }
+        } else {
+            other_total++;
+            if (r->detected) other_hits++;
+        }
     }
 
-    float total = 0.0f;
-    for (int lv = 1; lv <= 4; lv++) {
-        int n = hit[lv] > 3 ? 3 : hit[lv];
-        for (int k = 0; k < n; k++)
-            total += w[lv] * damp[k];
+    /* L1: Root 框架基线 */
+    int frameworks = has_magisk + has_ksu + has_apatch;
+    int score = 0;
+    if (frameworks >= 1) {
+        score += 60;
+        if (frameworks >= 2) score += 12;
+        if (frameworks >= 3) score += 10;
     }
 
-    int score = (int)(total + 0.5f);
-    return score > 100 ? 100 : score;
+    /* L2: Root 证据数量 */
+    {
+        int a = root_crit * 3; if (a > 20) a = 20; score += a;
+        int b = root_high * 2; if (b > 10) b = 10; score += b;
+        int c = root_med  * 1; if (c >  5) c =  5; score += c;
+    }
+
+    /* L2.5: 模拟器本身即高危环境 */
+    if (emu_hits >= 8)      { if (score < 90) score = 90; }
+    else if (emu_hits >= 5) { if (score < 80) score = 80; }
+    else if (emu_hits >= 3) { if (score < 70) score = 70; }
+    else if (emu_hits >= 1) { score += 15; }
+
+    /* L3: Hook / 注入框架 */
+    if (has_frida)  score += 10;
+    if (has_xposed) score += 8;
+    if (has_zygisk) score += 6;
+    if (has_hide)   score += 5;
+
+    /* L4: 其他模块（按命中比例） */
+    if (other_total > 0) {
+        int pct = (other_hits * 100) / other_total;
+        int add = (pct * 15) / 100;
+        if (score == 0 && add > 45) add = 45;  /* 无 Root 时不进危险区 */
+        score += add;
+    }
+
+    if (score > 100) score = 100;
+    if (score < 0)   score = 0;
+    return score;
 }
 
 /* 各模块实现声明 */
