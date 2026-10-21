@@ -123,27 +123,37 @@ fun HomeScreen(
                 else -> com.ce11kjw.aegis.ui.theme.StatusClean
             }
 
-            var visible by remember { mutableStateOf(entrancePlayed) }
+            /* 入场动画：用 graphicsLayer 直接驱动，不用 AnimatedVisibility
+             * ⚠️ AnimatedVisibility 在 LazyColumn item 里：
+             *    初始 visible=false 时高度为 0，会把后续 item 全部挤到顶部，
+             *    造成"整屏空白"。必须改用手动动画。 */
+            val alphaAnim = remember { Animatable(if (entrancePlayed) 1f else 0f) }
+            val offsetAnim = remember { Animatable(if (entrancePlayed) 0f else 28f) }
             LaunchedEffect(entrancePlayed) {
                 if (!entrancePlayed) {
                     kotlinx.coroutines.delay(index.coerceAtMost(10) * 30L)
-                    visible = true
+                    kotlinx.coroutines.coroutineScope {
+                        launch { alphaAnim.animateTo(1f, tween(220)) }
+                        launch { offsetAnim.animateTo(0f, tween(220)) }
+                    }
+                } else {
+                    // 已播放过：确保终态
+                    alphaAnim.snapTo(1f)
+                    offsetAnim.snapTo(0f)
                 }
             }
 
-            androidx.compose.animation.AnimatedVisibility(
-                visible = visible,
-                enter = androidx.compose.animation.fadeIn(tween(220)) +
-                        androidx.compose.animation.slideInVertically(tween(220)) { it / 6 }
-            ) {
-                ModuleCard(
-                    name = moduleName,
-                    total = items.size,
-                    hits = hitCount,
-                    accent = color,
-                    onClick = { onModuleClick(moduleName, items) }
-                )
-            }
+            ModuleCard(
+                name = moduleName,
+                total = items.size,
+                hits = hitCount,
+                accent = color,
+                onClick = { onModuleClick(moduleName, items) },
+                modifier = Modifier.graphicsLayer {
+                    alpha = alphaAnim.value
+                    translationY = offsetAnim.value
+                }
+            )
         }
     }
 }
@@ -159,9 +169,11 @@ private fun ModuleCard(
     total: Int,
     hits: Int,
     accent: androidx.compose.ui.graphics.Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
+        modifier = modifier,
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surface,
         onClick = onClick

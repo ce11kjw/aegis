@@ -14,8 +14,8 @@ android {
         applicationId = "com.ce11kjw.aegis"
         minSdk = 26
         targetSdk = 36
-        versionCode = 28
-        versionName = "4.6.1"
+        versionCode = 29
+        versionName = "4.6.2"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
